@@ -1,4 +1,4 @@
-import { type FormEvent, useMemo, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
 import { Button } from '#/components/ui/button'
@@ -13,7 +13,7 @@ import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { Separator } from '#/components/ui/separator'
 import { Textarea } from '#/components/ui/textarea'
-import { type Policy, useAppData } from '#/lib/mock-data'
+import { type Policy, useAppData } from '#/lib/app-data'
 
 type PolicyEditorProps =
   | {
@@ -56,7 +56,7 @@ function toCriterionDrafts(policy?: Policy): CriterionDraft[] {
 
 export function PolicyEditor(props: PolicyEditorProps) {
   const navigate = useNavigate()
-  const { policies, addPolicy, updatePolicy } = useAppData()
+  const { policies, loading, error, addPolicy, updatePolicy } = useAppData()
   const policy =
     props.mode === 'edit'
       ? policies.find((item) => item.id === props.policyId)
@@ -66,6 +66,17 @@ export function PolicyEditor(props: PolicyEditorProps) {
   const [name, setName] = useState(policy?.name ?? '')
   const [description, setDescription] = useState(policy?.description ?? '')
   const [criteria, setCriteria] = useState<CriterionDraft[]>(initialCriteria)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!policy) {
+      return
+    }
+
+    setName(policy.name)
+    setDescription(policy.description)
+    setCriteria(toCriterionDrafts(policy))
+  }, [policy])
 
   const validCriteria = criteria.filter(
     (criterion) =>
@@ -85,7 +96,7 @@ export function PolicyEditor(props: PolicyEditorProps) {
     )
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
     if (!canSave) {
@@ -103,13 +114,30 @@ export function PolicyEditor(props: PolicyEditorProps) {
       })),
     }
 
-    if (props.mode === 'create') {
-      addPolicy(nextPolicy)
-    } else {
-      updatePolicy(props.policyId, nextPolicy)
-    }
+    setSaving(true)
+    try {
+      if (props.mode === 'create') {
+        await addPolicy(nextPolicy)
+      } else {
+        await updatePolicy(props.policyId, nextPolicy)
+      }
 
-    navigate({ to: '/policies' })
+      navigate({ to: '/policies' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (props.mode === 'edit' && loading) {
+    return (
+      <main className="mx-auto grid w-full max-w-3xl gap-6 px-4 py-8">
+        <Card>
+          <CardContent className="p-8 text-center text-sm text-muted-foreground">
+            Loading policy...
+          </CardContent>
+        </Card>
+      </main>
+    )
   }
 
   if (props.mode === 'edit' && !policy) {
@@ -123,7 +151,7 @@ export function PolicyEditor(props: PolicyEditorProps) {
         </Button>
         <Card>
           <CardContent className="p-8 text-center text-sm text-muted-foreground">
-            Policy not found.
+            {error || 'Policy not found.'}
           </CardContent>
         </Card>
       </main>
@@ -268,8 +296,12 @@ export function PolicyEditor(props: PolicyEditorProps) {
               <Button asChild type="button" variant="outline">
                 <Link to="/policies">Cancel</Link>
               </Button>
-              <Button type="submit" disabled={!canSave}>
-                {props.mode === 'create' ? 'Create policy' : 'Save policy'}
+              <Button type="submit" disabled={!canSave || saving}>
+                {saving
+                  ? 'Saving...'
+                  : props.mode === 'create'
+                    ? 'Create policy'
+                    : 'Save policy'}
               </Button>
             </div>
           </form>

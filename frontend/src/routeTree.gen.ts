@@ -9,11 +9,24 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SubmissionsRouteImport } from './routes/submissions'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as PoliciesRouteImport } from './routes/policies'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as PoliciesIndexRouteImport } from './routes/policies.index'
 import { Route as PoliciesNewRouteImport } from './routes/policies.new'
 import { Route as PoliciesPolicyIdRouteImport } from './routes/policies.$policyId'
 
+const SubmissionsRoute = SubmissionsRouteImport.update({
+  id: '/submissions',
+  path: '/submissions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PoliciesRoute = PoliciesRouteImport.update({
   id: '/policies',
   path: '/policies',
@@ -23,6 +36,11 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const PoliciesIndexRoute = PoliciesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PoliciesRoute,
 } as any)
 const PoliciesNewRoute = PoliciesNewRouteImport.update({
   id: '/new',
@@ -38,37 +56,82 @@ const PoliciesPolicyIdRoute = PoliciesPolicyIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/policies': typeof PoliciesRouteWithChildren
+  '/settings': typeof SettingsRoute
+  '/submissions': typeof SubmissionsRoute
   '/policies/$policyId': typeof PoliciesPolicyIdRoute
   '/policies/new': typeof PoliciesNewRoute
+  '/policies/': typeof PoliciesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/policies': typeof PoliciesRouteWithChildren
+  '/settings': typeof SettingsRoute
+  '/submissions': typeof SubmissionsRoute
   '/policies/$policyId': typeof PoliciesPolicyIdRoute
   '/policies/new': typeof PoliciesNewRoute
+  '/policies': typeof PoliciesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/policies': typeof PoliciesRouteWithChildren
+  '/settings': typeof SettingsRoute
+  '/submissions': typeof SubmissionsRoute
   '/policies/$policyId': typeof PoliciesPolicyIdRoute
   '/policies/new': typeof PoliciesNewRoute
+  '/policies/': typeof PoliciesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/policies' | '/policies/$policyId' | '/policies/new'
+  fullPaths:
+    | '/'
+    | '/policies'
+    | '/settings'
+    | '/submissions'
+    | '/policies/$policyId'
+    | '/policies/new'
+    | '/policies/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/policies' | '/policies/$policyId' | '/policies/new'
-  id: '__root__' | '/' | '/policies' | '/policies/$policyId' | '/policies/new'
+  to:
+    | '/'
+    | '/settings'
+    | '/submissions'
+    | '/policies/$policyId'
+    | '/policies/new'
+    | '/policies'
+  id:
+    | '__root__'
+    | '/'
+    | '/policies'
+    | '/settings'
+    | '/submissions'
+    | '/policies/$policyId'
+    | '/policies/new'
+    | '/policies/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   PoliciesRoute: typeof PoliciesRouteWithChildren
+  SettingsRoute: typeof SettingsRoute
+  SubmissionsRoute: typeof SubmissionsRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/submissions': {
+      id: '/submissions'
+      path: '/submissions'
+      fullPath: '/submissions'
+      preLoaderRoute: typeof SubmissionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/policies': {
       id: '/policies'
       path: '/policies'
@@ -82,6 +145,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/policies/': {
+      id: '/policies/'
+      path: '/'
+      fullPath: '/policies/'
+      preLoaderRoute: typeof PoliciesIndexRouteImport
+      parentRoute: typeof PoliciesRoute
     }
     '/policies/new': {
       id: '/policies/new'
@@ -103,11 +173,13 @@ declare module '@tanstack/react-router' {
 interface PoliciesRouteChildren {
   PoliciesPolicyIdRoute: typeof PoliciesPolicyIdRoute
   PoliciesNewRoute: typeof PoliciesNewRoute
+  PoliciesIndexRoute: typeof PoliciesIndexRoute
 }
 
 const PoliciesRouteChildren: PoliciesRouteChildren = {
   PoliciesPolicyIdRoute: PoliciesPolicyIdRoute,
   PoliciesNewRoute: PoliciesNewRoute,
+  PoliciesIndexRoute: PoliciesIndexRoute,
 }
 
 const PoliciesRouteWithChildren = PoliciesRoute._addFileChildren(
@@ -117,6 +189,8 @@ const PoliciesRouteWithChildren = PoliciesRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   PoliciesRoute: PoliciesRouteWithChildren,
+  SettingsRoute: SettingsRoute,
+  SubmissionsRoute: SubmissionsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -9,7 +9,8 @@
     "dev": "vite dev --port 3000",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typegen": "pocketbase-typegen --url http://127.0.0.1:8090 --email \"$PB_TYPEGEN_EMAIL\" --password \"$PB_TYPEGEN_PASSWORD\" --out src/lib/pocketbase-types.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",
@@ -22,6 +23,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.577.0",
+    "pocketbase": "^0.26.8",
     "radix-ui": "^1.4.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
@@ -39,6 +41,7 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.0.1",
     "jsdom": "^28.1.0",
+    "pocketbase-typegen": "^1.4.0",
     "typescript": "^5.7.2",
     "vite": "^8.0.0",
     "vitest": "^3.0.5"

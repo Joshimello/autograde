@@ -12,6 +12,24 @@ bun --bun run dev
 
 The development server runs on port `3000`.
 
+## PocketBase
+
+Start PocketBase from the repo root before using the app:
+
+```bash
+docker compose up --build pocketbase
+```
+
+The frontend reads `VITE_POCKETBASE_URL`, defaulting to
+`http://127.0.0.1:8090`. Copy `.env.example` to `.env.local` if you need to
+override it.
+
+Regenerate PocketBase types with:
+
+```bash
+PB_TYPEGEN_EMAIL=admin@example.com PB_TYPEGEN_PASSWORD=change-me-please bun run typegen
+```
+
 ## Production Build
 
 ```bash
