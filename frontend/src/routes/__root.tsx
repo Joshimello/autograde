@@ -1,12 +1,12 @@
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
-import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
-import { TanStackDevtools } from '@tanstack/react-devtools'
-import Footer from '../components/Footer'
-import Header from '../components/Header'
+import {
+  HeadContent,
+  Link,
+  Scripts,
+  createRootRoute,
+} from '@tanstack/react-router'
 
+import { AppDataProvider } from '#/lib/mock-data'
 import appCss from '../styles.css?url'
-
-const THEME_INIT_SCRIPT = `(function(){try{var stored=window.localStorage.getItem('theme');var mode=(stored==='light'||stored==='dark'||stored==='auto')?stored:'auto';var prefersDark=window.matchMedia('(prefers-color-scheme: dark)').matches;var resolved=mode==='auto'?(prefersDark?'dark':'light'):mode;var root=document.documentElement;root.classList.remove('light','dark');root.classList.add(resolved);if(mode==='auto'){root.removeAttribute('data-theme')}else{root.setAttribute('data-theme',mode)}root.style.colorScheme=resolved;}catch(e){}})();`
 
 export const Route = createRootRoute({
   head: () => ({
@@ -19,7 +19,7 @@ export const Route = createRootRoute({
         content: 'width=device-width, initial-scale=1',
       },
       {
-        title: 'TanStack Start Starter',
+        title: 'Autograde',
       },
     ],
     links: [
@@ -34,26 +34,51 @@ export const Route = createRootRoute({
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en">
       <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <HeadContent />
       </head>
-      <body className="font-sans antialiased [overflow-wrap:anywhere] selection:bg-[rgba(79,184,178,0.24)]">
-        <Header />
-        {children}
-        <Footer />
-        <TanStackDevtools
-          config={{
-            position: 'bottom-right',
-          }}
-          plugins={[
-            {
-              name: 'Tanstack Router',
-              render: <TanStackRouterDevtoolsPanel />,
-            },
-          ]}
-        />
+      <body className="antialiased">
+        <AppDataProvider>
+          <div className="min-h-screen bg-background text-foreground">
+            <header className="border-b bg-card">
+              <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-5 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">
+                    Autograde
+                  </p>
+                  <h1 className="text-2xl font-semibold tracking-tight">
+                    Grading Control
+                  </h1>
+                </div>
+                <nav className="flex gap-2">
+                  <Link
+                    to="/"
+                    activeOptions={{ exact: true }}
+                    className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-accent-foreground"
+                    activeProps={{
+                      className:
+                        'rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground',
+                    }}
+                  >
+                    Submissions
+                  </Link>
+                  <Link
+                    to="/policies"
+                    className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-accent-foreground"
+                    activeProps={{
+                      className:
+                        'rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground',
+                    }}
+                  >
+                    Policies
+                  </Link>
+                </nav>
+              </div>
+            </header>
+            {children}
+          </div>
+        </AppDataProvider>
         <Scripts />
       </body>
     </html>

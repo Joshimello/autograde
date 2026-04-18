@@ -1,0 +1,5 @@
+.DS_Store
+
+# PocketBase runtime state and uploaded files live in Docker volumes locally.
+pocketbase/pb_data/
+pocketbase/pb_backups/
