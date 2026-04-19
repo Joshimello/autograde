@@ -8,6 +8,76 @@ services:
       - pocketbase_data:/pb/pb_data
       - ./pocketbase/pb_migrations:/pb/pb_migrations:ro
       - ./pocketbase/pb_hooks:/pb/pb_hooks:ro
+    networks:
+      - runtime
+
+  submissions-worker:
+    build:
+      context: ./submissions-worker
+    depends_on:
+      - pocketbase
+    environment:
+      POCKETBASE_URL: http://pocketbase:8090
+      POCKETBASE_ADMIN_EMAIL: ${POCKETBASE_ADMIN_EMAIL:-admin@example.com}
+      POCKETBASE_ADMIN_PASSWORD: ${POCKETBASE_ADMIN_PASSWORD:-change-me-please}
+      SUBMISSION_RUNNER_IMAGE: autograde-submission-runner:latest
+      SUBMISSION_RUNNER_NETWORK: autograde_runtime
+      SUBMISSIONS_WORKER_RUNS_DIR: /runs
+      SUBMISSIONS_WORKER_RUNS_VOLUME: autograde_submissions_worker_runs
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
+      ANTHROPIC_AUTH_TOKEN: ${ANTHROPIC_AUTH_TOKEN:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - submissions_worker_runs:/runs
+    networks:
+      - runtime
+
+  policies-worker:
+    build:
+      context: ./policies-worker
+    depends_on:
+      - pocketbase
+    environment:
+      POCKETBASE_URL: http://pocketbase:8090
+      POCKETBASE_ADMIN_EMAIL: ${POCKETBASE_ADMIN_EMAIL:-admin@example.com}
+      POCKETBASE_ADMIN_PASSWORD: ${POCKETBASE_ADMIN_PASSWORD:-change-me-please}
+      MARKITDOWN_IMAGE: markitdown:latest
+      MARKITDOWN_NETWORK: autograde_runtime
+      POLICIES_WORKER_RUNS_DIR: /policy-runs
+      POLICIES_WORKER_RUNS_VOLUME: autograde_policies_worker_runs
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
+      ANTHROPIC_AUTH_TOKEN: ${ANTHROPIC_AUTH_TOKEN:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - policies_worker_runs:/policy-runs
+    networks:
+      - runtime
+
+  markitdown:
+    image: markitdown:latest
+    build:
+      context: ./markitdown
+    entrypoint: ["sh", "-c", "sleep infinity"]
+    networks:
+      - runtime
+
+  submission-runner:
+    image: autograde-submission-runner:latest
+    build:
+      context: ./submission-runner
+    entrypoint: ["sh", "-c", "sleep infinity"]
+    networks:
+      - runtime
 
 volumes:
   pocketbase_data:
+  submissions_worker_runs:
+    name: autograde_submissions_worker_runs
+  policies_worker_runs:
+    name: autograde_policies_worker_runs
+
+networks:
+  runtime:
+    name: autograde_runtime

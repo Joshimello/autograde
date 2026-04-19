@@ -15,6 +15,7 @@ export const Collections = {
 	EmailWhitelist: "email_whitelist",
 	Jobs: "jobs",
 	Policies: "policies",
+	PolicyImports: "policy_imports",
 	Results: "results",
 	Submissions: "submissions",
 	Users: "users",
@@ -155,6 +156,28 @@ export type PoliciesRecord<Tcriteria = unknown> = {
 	name: string
 }
 
+export const PolicyImportsStatusOptions = {
+	"queued": "queued",
+	"running": "running",
+	"succeeded": "succeeded",
+	"failed": "failed",
+	"canceled": "canceled",
+} as const
+export type PolicyImportsStatusOptions = typeof PolicyImportsStatusOptions[keyof typeof PolicyImportsStatusOptions]
+export type PolicyImportsRecord = {
+	error?: string
+	finishedAt?: IsoDateString
+	id: string
+	label: string
+	markdownPreview?: string
+	message?: string
+	policy?: RecordIdString
+	progress?: number
+	sourceFile: FileNameString
+	startedAt?: IsoDateString
+	status: PolicyImportsStatusOptions
+}
+
 export type ResultsRecord<TrubricResults = unknown> = {
 	feedback?: string
 	id: string
@@ -206,6 +229,7 @@ export type DeploymentsResponse<Texpand = unknown> = Required<DeploymentsRecord>
 export type EmailWhitelistResponse<Texpand = unknown> = Required<EmailWhitelistRecord> & BaseSystemFields<Texpand>
 export type JobsResponse<Texpand = unknown> = Required<JobsRecord> & BaseSystemFields<Texpand>
 export type PoliciesResponse<Tcriteria = unknown, Texpand = unknown> = Required<PoliciesRecord<Tcriteria>> & BaseSystemFields<Texpand>
+export type PolicyImportsResponse<Texpand = unknown> = Required<PolicyImportsRecord> & BaseSystemFields<Texpand>
 export type ResultsResponse<TrubricResults = unknown, Texpand = unknown> = Required<ResultsRecord<TrubricResults>> & BaseSystemFields<Texpand>
 export type SubmissionsResponse<TmanualGrades = unknown, Texpand = unknown> = Required<SubmissionsRecord<TmanualGrades>> & BaseSystemFields<Texpand>
 export type UsersResponse<Texpand = unknown> = Required<UsersRecord> & AuthSystemFields<Texpand>
@@ -222,6 +246,7 @@ export type CollectionRecords = {
 	email_whitelist: EmailWhitelistRecord
 	jobs: JobsRecord
 	policies: PoliciesRecord
+	policy_imports: PolicyImportsRecord
 	results: ResultsRecord
 	submissions: SubmissionsRecord
 	users: UsersRecord
@@ -237,6 +262,7 @@ export type CollectionResponses = {
 	email_whitelist: EmailWhitelistResponse
 	jobs: JobsResponse
 	policies: PoliciesResponse
+	policy_imports: PolicyImportsResponse
 	results: ResultsResponse
 	submissions: SubmissionsResponse
 	users: UsersResponse

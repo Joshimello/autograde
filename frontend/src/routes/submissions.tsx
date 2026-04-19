@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { ClipboardCheck, Search, Trash2, Upload } from 'lucide-react'
+import { Bot, ClipboardCheck, Search, Trash2, Upload } from 'lucide-react'
 import { RequireAuth } from '#/components/RequireAuth'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
@@ -34,7 +34,9 @@ import {
 } from '#/components/ui/table'
 import { Textarea } from '#/components/ui/textarea'
 import {
+  type BuildStatus,
   type CriterionGrade,
+  type GradingJobStatus,
   type Policy,
   type Submission,
   useAppData,
@@ -62,9 +64,12 @@ function SubmissionsPage() {
     error,
     addSubmission,
     deleteSubmission,
+    startSubmissionGrading,
     getPolicyName,
     getPolicyTotalPoints,
     getSubmissionScore,
+    getSubmissionJob,
+    getSubmissionResult,
     saveSubmissionGrades,
   } = useAppData()
   const [search, setSearch] = useState('')
@@ -134,6 +139,8 @@ function SubmissionsPage() {
                   <TableHead>Policy</TableHead>
                   <TableHead>Zip file</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>AI job</TableHead>
+                  <TableHead>Build</TableHead>
                   <TableHead>Manual score</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -142,7 +149,7 @@ function SubmissionsPage() {
                 {loading ? (
                   <TableRow>
                     <TableCell
-                      colSpan={6}
+                      colSpan={8}
                       className="h-28 text-center text-muted-foreground"
                     >
                       Loading submissions...
@@ -151,7 +158,7 @@ function SubmissionsPage() {
                 ) : filteredSubmissions.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={6}
+                      colSpan={8}
                       className="h-28 text-center text-muted-foreground"
                     >
                       No submissions match the current filters.
@@ -164,6 +171,10 @@ function SubmissionsPage() {
                     )
                     const totalPoints = policy ? getPolicyTotalPoints(policy) : 0
                     const score = getSubmissionScore(submission)
+                    const job = getSubmissionJob(submission.id)
+                    const result = getSubmissionResult(submission.id)
+                    const gradingInProgress =
+                      job?.status === 'queued' || job?.status === 'running'
 
                     return (
                       <TableRow key={submission.id}>
@@ -178,10 +189,49 @@ function SubmissionsPage() {
                           </Badge>
                         </TableCell>
                         <TableCell>
+                          {job ? (
+                            <div className="grid gap-1">
+                              <Badge variant={jobStatusVariant(job.status)}>
+                                {formatStatus(job.status)}
+                              </Badge>
+                              {job.message ? (
+                                <span className="text-xs text-muted-foreground">
+                                  {job.message}
+                                </span>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">
+                              Not queued
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {result?.buildStatus ? (
+                            <Badge variant={buildStatusVariant(result.buildStatus)}>
+                              {formatStatus(result.buildStatus)}
+                            </Badge>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
                           {policy ? `${score} / ${totalPoints}` : 'No policy'}
                         </TableCell>
                         <TableCell>
                           <div className="flex justify-end gap-2">
+                            {policy ? (
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                disabled={gradingInProgress}
+                                onClick={() => startSubmissionGrading(submission.id)}
+                              >
+                                <Bot />
+                                {gradingInProgress ? 'Queued' : 'AI grade'}
+                              </Button>
+                            ) : null}
                             {policy ? (
                               <ManualGradeDialog
                                 policy={policy}
@@ -535,6 +585,30 @@ function ManualGradeDialog({
   )
 }
 
-function formatStatus(status: Submission['status']) {
+function formatStatus(status: string) {
   return status.charAt(0).toUpperCase() + status.slice(1)
+}
+
+function jobStatusVariant(status: GradingJobStatus) {
+  if (status === 'failed' || status === 'canceled') {
+    return 'destructive'
+  }
+
+  if (status === 'succeeded') {
+    return 'default'
+  }
+
+  return 'secondary'
+}
+
+function buildStatusVariant(status: BuildStatus) {
+  if (status === 'failed') {
+    return 'destructive'
+  }
+
+  if (status === 'passed') {
+    return 'default'
+  }
+
+  return 'secondary'
 }

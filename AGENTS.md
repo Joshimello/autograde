@@ -6,6 +6,10 @@ This repository has two top-level areas:
 
 - `frontend/`: TanStack Start React app built with Vite, TypeScript, Tailwind CSS, and Bun.
 - `pocketbase/`: PocketBase container definition in `Dockerfile`.
+- `submissions-worker/`: Bun worker that claims grading jobs and launches Docker runner containers.
+- `submission-runner/`: Docker image used to extract, build, and grade one submission.
+- `policies-worker/`: Bun worker that imports policy documents and creates draft policies.
+- `markitdown/`: Docker image for Microsoft MarkItDown document-to-Markdown conversion.
 
 Frontend source lives in `frontend/src`. File-based routes are in `src/routes`, shared UI components are in `src/components`, helpers are in `src/lib`, and global styles/tokens are in `src/styles.css`. Generated router output is `src/routeTree.gen.ts`; avoid hand-editing it.
 
@@ -31,6 +35,28 @@ To build the PocketBase image from the repo root:
 
 ```bash
 docker build -t autograde-pocketbase ./pocketbase
+```
+
+Run the full local stack from the repo root:
+
+```bash
+docker compose up --build
+```
+
+Run worker checks from `submissions-worker/`:
+
+```bash
+bun install
+bun run typecheck
+bun test
+```
+
+Run policy worker checks from `policies-worker/`:
+
+```bash
+bun install
+bun run typecheck
+bun test
 ```
 
 ## Coding Style & Naming Conventions

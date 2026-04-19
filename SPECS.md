@@ -8,7 +8,7 @@ The platform is designed around a clear separation of concerns:
 
 - **Frontend** for user interaction
 - **PocketBase** for data, auth, storage, and realtime state
-- **Go workers** for executing grading and deployment jobs
+- **Bun workers** for executing grading and deployment jobs
 - **Docker** for secure, isolated code execution
 
 ## Core Architecture
@@ -16,6 +16,7 @@ The platform is designed around a clear separation of concerns:
 ### 1. Frontend (React)
 
 - Allows users to create grading specs
+- Allows users to import grading specs from PDF, DOCX, and PPTX documents
 - Handles submission uploads (as zip files)
 - Triggers grading and deployment jobs
 - Displays live progress and results via realtime updates
@@ -27,7 +28,7 @@ The platform is designed around a clear separation of concerns:
 - Stores grading specs, submissions, jobs, results, and deployments
 - Emits realtime updates when records change
 
-### 3. Workers (Go)
+### 3. Workers (Bun)
 
 - Long-running background processes
 - Listen for job records created in PocketBase
@@ -91,5 +92,6 @@ This platform is a **PocketBase-centered, worker-driven system** for grading and
 
 - The frontend interacts directly with PocketBase
 - Workers react to state changes and perform all heavy computation
+- Policy imports convert documents with MarkItDown before LLM extraction
 - Docker ensures safe execution of untrusted code
 - The system remains simple by keeping responsibilities clearly separated

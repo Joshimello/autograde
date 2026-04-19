@@ -1,6 +1,7 @@
 import {
   HeadContent,
   Link,
+  Outlet,
   Scripts,
   createRootRoute,
   useRouterState,
@@ -32,6 +33,8 @@ export const Route = createRootRoute({
     ],
   }),
   shellComponent: RootDocument,
+  component: RootLayout,
+  notFoundComponent: NotFound,
 })
 
 function RootDocument({ children }: { children: React.ReactNode }) {
@@ -41,16 +44,22 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body className="antialiased">
-        <AppDataProvider>
-          <AppShell>{children}</AppShell>
-        </AppDataProvider>
+        {children}
         <Scripts />
       </body>
     </html>
   )
 }
 
-function AppShell({ children }: { children: React.ReactNode }) {
+function RootLayout() {
+  return (
+    <AppDataProvider>
+      <AppShell />
+    </AppDataProvider>
+  )
+}
+
+function AppShell() {
   const { authenticated, logout, user } = useAppData()
   const isRootPage = useRouterState({
     select: (state) => state.location.pathname === '/',
@@ -78,8 +87,26 @@ function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
       ) : null}
-      {children}
+      <Outlet />
     </div>
+  )
+}
+
+function NotFound() {
+  return (
+    <main className="mx-auto grid min-h-screen w-full max-w-3xl place-items-center px-4 py-16 text-center">
+      <div className="grid gap-4">
+        <h1 className="text-3xl font-semibold tracking-tight">Not found</h1>
+        <p className="text-muted-foreground">
+          The page you requested does not exist.
+        </p>
+        <div>
+          <Button asChild>
+            <Link to="/">Go home</Link>
+          </Button>
+        </div>
+      </div>
+    </main>
   )
 }
 

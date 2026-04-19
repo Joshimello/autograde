@@ -48,6 +48,51 @@ export type Submission = {
   grades: CriterionGrade[]
 }
 
+export type GradingJobStatus =
+  | 'queued'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'canceled'
+
+export type GradingJob = {
+  id: string
+  submissionId: string
+  status: GradingJobStatus
+  progress: number
+  message: string
+}
+
+export type BuildStatus = 'passed' | 'failed' | 'skipped'
+
+export type SubmissionResult = {
+  id: string
+  submissionId: string
+  score: number
+  maxScore: number
+  buildStatus: BuildStatus | ''
+  buildLogSummary: string
+  feedback: string
+  rubricResults: CriterionGrade[]
+}
+
+export type PolicyImportStatus =
+  | 'queued'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'canceled'
+
+export type PolicyImport = {
+  id: string
+  label: string
+  fileName: string
+  status: PolicyImportStatus
+  progress: number
+  message: string
+  policyId: string
+}
+
 export type AuthUser = {
   id: string
   email: string
@@ -79,6 +124,38 @@ type SubmissionRecord = {
   manualGrades?: unknown
 }
 
+type GradingJobRecord = {
+  id: string
+  created?: string
+  submission?: string
+  status?: GradingJobStatus
+  progress?: number
+  message?: string
+}
+
+type ResultRecord = {
+  id: string
+  created?: string
+  submission?: string
+  score?: number
+  maxScore?: number
+  buildStatus?: BuildStatus
+  buildLogSummary?: string
+  feedback?: string
+  rubricResults?: unknown
+}
+
+type PolicyImportRecord = {
+  id: string
+  created?: string
+  label?: string
+  sourceFile?: string
+  status?: PolicyImportStatus
+  progress?: number
+  message?: string
+  policy?: string
+}
+
 type AuthRecord = {
   id?: string
   email?: string
@@ -99,6 +176,10 @@ type NewSubmission = {
   policyId: string
   archive: File
 }
+type NewPolicyImport = {
+  label: string
+  sourceFile: File
+}
 type NewWhitelistEntry = {
   email: string
   notes?: string
@@ -110,6 +191,9 @@ type AppDataContextValue = {
   authLoading: boolean
   policies: Policy[]
   submissions: Submission[]
+  jobs: GradingJob[]
+  results: SubmissionResult[]
+  policyImports: PolicyImport[]
   whitelist: WhitelistEntry[]
   loading: boolean
   error: string
@@ -121,7 +205,9 @@ type AppDataContextValue = {
   addPolicy: (policy: NewPolicy) => Promise<Policy>
   updatePolicy: (policyId: string, policy: NewPolicy) => Promise<void>
   deletePolicy: (policyId: string) => Promise<boolean>
+  importPolicyDocument: (policyImport: NewPolicyImport) => Promise<void>
   addSubmission: (submission: NewSubmission) => Promise<void>
+  startSubmissionGrading: (submissionId: string) => Promise<void>
   deleteSubmission: (submissionId: string) => Promise<void>
   saveSubmissionGrades: (
     submissionId: string,
@@ -136,6 +222,8 @@ type AppDataContextValue = {
   getPolicyName: (policyId: string) => string
   getPolicyTotalPoints: (policy: Policy) => number
   getSubmissionScore: (submission: Submission) => number
+  getSubmissionJob: (submissionId: string) => GradingJob | null
+  getSubmissionResult: (submissionId: string) => SubmissionResult | null
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null)
@@ -219,6 +307,41 @@ function mapSubmission(record: SubmissionRecord): Submission {
   }
 }
 
+function mapJob(record: GradingJobRecord): GradingJob {
+  return {
+    id: record.id,
+    submissionId: record.submission ?? '',
+    status: record.status ?? 'queued',
+    progress: record.progress ?? 0,
+    message: record.message ?? '',
+  }
+}
+
+function mapResult(record: ResultRecord): SubmissionResult {
+  return {
+    id: record.id,
+    submissionId: record.submission ?? '',
+    score: record.score ?? 0,
+    maxScore: record.maxScore ?? 0,
+    buildStatus: record.buildStatus ?? '',
+    buildLogSummary: record.buildLogSummary ?? '',
+    feedback: record.feedback ?? '',
+    rubricResults: toGrades(record.rubricResults),
+  }
+}
+
+function mapPolicyImport(record: PolicyImportRecord): PolicyImport {
+  return {
+    id: record.id,
+    label: record.label ?? 'Untitled import',
+    fileName: record.sourceFile ?? '',
+    status: record.status ?? 'queued',
+    progress: record.progress ?? 0,
+    message: record.message ?? '',
+    policyId: record.policy ?? '',
+  }
+}
+
 function mapUser(record: unknown): AuthUser | null {
   if (!record || typeof record !== 'object') {
     return null
@@ -252,13 +375,14 @@ function normalizeEmail(email: string) {
 }
 
 export function AppDataProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(() =>
-    mapUser(pb.authStore.record)
-  )
+  const [user, setUser] = useState<AuthUser | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
   const [authError, setAuthError] = useState('')
   const [policies, setPolicies] = useState<Policy[]>([])
   const [submissions, setSubmissions] = useState<Submission[]>([])
+  const [jobs, setJobs] = useState<GradingJob[]>([])
+  const [results, setResults] = useState<SubmissionResult[]>([])
+  const [policyImports, setPolicyImports] = useState<PolicyImport[]>([])
   const [whitelist, setWhitelist] = useState<WhitelistEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -267,6 +391,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const clearData = useCallback(() => {
     setPolicies([])
     setSubmissions([])
+    setJobs([])
+    setResults([])
+    setPolicyImports([])
     setWhitelist([])
   }, [])
 
@@ -281,10 +408,21 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     setError('')
 
     try {
-      const [policyRecords, submissionRecords] = await Promise.all([
-        pb.collection(Collections.Policies).getFullList(),
-        pb.collection(Collections.Submissions).getFullList(),
-      ])
+      const [
+        policyRecords,
+        submissionRecords,
+        jobRecords,
+        resultRecords,
+        policyImportRecords,
+      ] = await Promise.all([
+          pb.collection(Collections.Policies).getFullList(),
+          pb.collection(Collections.Submissions).getFullList(),
+          pb.collection(Collections.Jobs).getFullList({
+            filter: 'type = "grading"',
+          }),
+          pb.collection(Collections.Results).getFullList(),
+          pb.collection(Collections.PolicyImports).getFullList(),
+        ])
 
       setPolicies(
         (policyRecords as PolicyRecord[])
@@ -297,6 +435,27 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             String(second.created ?? '').localeCompare(String(first.created ?? ''))
           )
           .map(mapSubmission)
+      )
+      setJobs(
+        (jobRecords as GradingJobRecord[])
+          .toSorted((first, second) =>
+            String(second.created ?? '').localeCompare(String(first.created ?? ''))
+          )
+          .map(mapJob)
+      )
+      setResults(
+        (resultRecords as ResultRecord[])
+          .toSorted((first, second) =>
+            String(second.created ?? '').localeCompare(String(first.created ?? ''))
+          )
+          .map(mapResult)
+      )
+      setPolicyImports(
+        (policyImportRecords as PolicyImportRecord[])
+          .toSorted((first, second) =>
+            String(second.created ?? '').localeCompare(String(first.created ?? ''))
+          )
+          .map(mapPolicyImport)
       )
     } catch (cause) {
       setError(
@@ -368,6 +527,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       authLoading,
       policies,
       submissions,
+      jobs,
+      results,
+      policyImports,
       whitelist,
       loading,
       error,
@@ -422,6 +584,16 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         await refresh()
         return true
       },
+      importPolicyDocument: async (policyImport) => {
+        await pb.collection(Collections.PolicyImports).create({
+          label: policyImport.label,
+          sourceFile: policyImport.sourceFile,
+          status: 'queued',
+          progress: 0,
+          message: 'Queued',
+        })
+        await refresh()
+      },
       addSubmission: async (submission) => {
         await pb.collection(Collections.Submissions).create({
           label: submission.label,
@@ -430,6 +602,19 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           status: 'pending',
           manualGrades: [],
           manualScore: 0,
+        })
+        await refresh()
+      },
+      startSubmissionGrading: async (submissionId) => {
+        await pb.collection(Collections.Jobs).create({
+          submission: submissionId,
+          type: 'grading',
+          status: 'queued',
+          progress: 0,
+          message: 'Queued',
+        })
+        await pb.collection(Collections.Submissions).update(submissionId, {
+          status: 'grading',
         })
         await refresh()
       },
@@ -470,6 +655,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         policy.criteria.reduce((total, criterion) => total + criterion.points, 0),
       getSubmissionScore: (submission) =>
         submission.grades.reduce((total, grade) => total + grade.score, 0),
+      getSubmissionJob: (submissionId) =>
+        jobs.find((job) => job.submissionId === submissionId) ?? null,
+      getSubmissionResult: (submissionId) =>
+        results.find((result) => result.submissionId === submissionId) ?? null,
     }),
     [
       authError,
@@ -478,9 +667,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       clearData,
       error,
       loading,
+      jobs,
       policies,
+      policyImports,
       refresh,
       refreshWhitelist,
+      results,
       submissions,
       user,
       whitelist,
