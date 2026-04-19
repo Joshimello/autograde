@@ -266,7 +266,7 @@ migrate((app) => {
     new NumberField({
       name: 'sequence',
       required: true,
-      min: 0,
+      min: 1,
     }),
     new SelectField({
       name: 'stream',

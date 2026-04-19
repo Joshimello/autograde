@@ -91,8 +91,8 @@ export function createPocketBaseClient(config: WorkerConfig) {
       return
     }
 
-    const sequence = logSequences.get(jobId) ?? 0
-    logSequences.set(jobId, sequence + 1)
+    const sequence = (logSequences.get(jobId) ?? 0) + 1
+    logSequences.set(jobId, sequence)
 
     try {
       await pb.collection('job_logs').create({
@@ -132,9 +132,7 @@ export function createPocketBaseClient(config: WorkerConfig) {
       .getOne(job.submission)) as unknown as SubmissionRecord
 
     await replaceResult(submission, result)
-    await pb.collection('submissions').update(submission.id, {
-      status: 'needs_review',
-    })
+    await updateSubmissionStatus(submission.id, 'needs_review')
     await pb.collection('jobs').update(job.id, {
       status: 'succeeded',
       progress: 100,
@@ -164,9 +162,7 @@ export function createPocketBaseClient(config: WorkerConfig) {
     const message = formatError(cause)
     const summary = message.split('\n').find((line) => line.trim()) ?? message
 
-    await pb.collection('submissions').update(job.submission, {
-      status: 'failed',
-    })
+    await updateSubmissionStatus(job.submission, 'failed')
     await pb.collection('jobs').update(job.id, {
       status: 'failed',
       message: summary.slice(0, 2000),
@@ -232,6 +228,20 @@ export function createPocketBaseClient(config: WorkerConfig) {
       buildLogSummary: result.buildLogSummary,
       feedback: result.feedback,
     })
+  }
+
+  async function updateSubmissionStatus(submissionId: string, status: string) {
+    try {
+      await pb.collection('submissions').update(submissionId, {
+        status,
+      })
+    } catch (cause) {
+      console.error(
+        `Failed to update submission ${submissionId} status to ${status}`,
+        formatPocketBaseError(cause)
+      )
+      throw cause
+    }
   }
 
   return {

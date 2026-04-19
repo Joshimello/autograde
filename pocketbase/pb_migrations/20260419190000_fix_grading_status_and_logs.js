@@ -10,19 +10,31 @@ migrate((app) => {
   }))
   app.save(submissions)
 
+  const jobLogs = app.findCollectionByNameOrId('job_logs')
+  const sequence = jobLogs.fields.getByName('sequence')
+  jobLogs.fields.add(new NumberField({
+    id: sequence.id,
+    name: 'sequence',
+    required: true,
+    min: 1,
+  }))
+  app.save(jobLogs)
+
   app.db().newQuery(`
-    UPDATE submissions
-    SET status = 'needs_review'
-    WHERE status = 'graded'
-      AND COALESCE(json_array_length(manualGrades), 0) = 0
-      AND id IN (SELECT submission FROM results)
+    UPDATE job_logs
+    SET sequence = sequence + 1
+    WHERE sequence = 0
   `).execute()
 }, (app) => {
-  app.db().newQuery(`
-    UPDATE submissions
-    SET status = 'pending'
-    WHERE status = 'needs_review'
-  `).execute()
+  const jobLogs = app.findCollectionByNameOrId('job_logs')
+  const sequence = jobLogs.fields.getByName('sequence')
+  jobLogs.fields.add(new NumberField({
+    id: sequence.id,
+    name: 'sequence',
+    required: true,
+    min: 0,
+  }))
+  app.save(jobLogs)
 
   const submissions = app.findCollectionByNameOrId('submissions')
   const status = submissions.fields.getByName('status')
