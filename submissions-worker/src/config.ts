@@ -4,6 +4,7 @@ export type WorkerConfig = {
   pocketbasePassword: string
   workerId: string
   pollIntervalMs: number
+  runnerConcurrency: number
   runnerImage: string
   runnerNetwork: string
   runsDir: string
@@ -48,6 +49,16 @@ function numberEnv(name: string, fallback: number) {
   return value
 }
 
+function integerEnv(name: string, fallback: number) {
+  const value = numberEnv(name, fallback)
+
+  if (!Number.isInteger(value)) {
+    throw new Error(`${name} must be an integer`)
+  }
+
+  return value
+}
+
 export function loadConfig(): WorkerConfig {
   return {
     pocketbaseUrl: optionalEnv('POCKETBASE_URL', 'http://127.0.0.1:8090'),
@@ -55,6 +66,7 @@ export function loadConfig(): WorkerConfig {
     pocketbasePassword: requiredEnv('POCKETBASE_ADMIN_PASSWORD'),
     workerId: optionalEnv('WORKER_ID', `submissions-worker-${crypto.randomUUID()}`),
     pollIntervalMs: numberEnv('WORKER_POLL_INTERVAL_MS', 3000),
+    runnerConcurrency: integerEnv('SUBMISSIONS_WORKER_CONCURRENCY', 2),
     runnerImage: optionalEnv('SUBMISSION_RUNNER_IMAGE', 'autograde-submission-runner:latest'),
     runnerNetwork: optionalEnv('SUBMISSION_RUNNER_NETWORK', 'autograde_runtime'),
     runsDir: optionalEnv('SUBMISSIONS_WORKER_RUNS_DIR', '/runs'),

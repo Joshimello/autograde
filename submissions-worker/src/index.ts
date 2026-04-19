@@ -3,17 +3,21 @@ import { existsSync } from 'node:fs'
 import { DockerRunner } from './docker'
 import { loadConfig } from './config'
 import { createPocketBaseClient } from './pocketbase'
+import type { JobRecord } from './types'
 
 const config = loadConfig()
 const pb = createPocketBaseClient(config)
 const runner = new DockerRunner(config)
+const activeJobs = new Set<Promise<void>>()
 
 async function main() {
   await authenticateWithRetry()
-  console.log(`submissions-worker started as ${config.workerId}`)
+  console.log(
+    `submissions-worker started as ${config.workerId} with concurrency ${config.runnerConcurrency}`
+  )
 
   while (true) {
-    await tick().catch((cause) => {
+    await fillRunnerSlots().catch((cause) => {
       console.error('Worker tick failed', cause)
     })
     await sleep(config.pollIntervalMs)
@@ -36,13 +40,22 @@ async function authenticateWithRetry() {
   }
 }
 
-async function tick() {
-  const job = await pb.claimNextJob()
+async function fillRunnerSlots() {
+  while (activeJobs.size < config.runnerConcurrency) {
+    const job = await pb.claimNextJob()
 
-  if (!job) {
-    return
+    if (!job) {
+      return
+    }
+
+    const task = processJob(job).finally(() => {
+      activeJobs.delete(task)
+    })
+    activeJobs.add(task)
   }
+}
 
+async function processJob(job: JobRecord) {
   const runDir = path.join(config.runsDir, job.id)
 
   try {

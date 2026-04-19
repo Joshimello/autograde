@@ -22,7 +22,7 @@ export class DockerRunner {
   ): Promise<RunnerOutput> {
     const policyPath = path.join(input.outputDir, 'policy.json')
     const resultPath = path.join(input.outputDir, 'result.json')
-    const containerName = `submission-runner-${input.submission.id}-${Date.now()}`
+    const containerName = `submission-runner-${input.submission.id}-${crypto.randomUUID()}`
     const container = await this.docker.createContainer({
       Image: this.config.runnerImage,
       name: containerName,
