@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { existsSync } from 'node:fs'
 import { DockerRunner } from './docker'
 import { loadConfig } from './config'
 import { createPocketBaseClient } from './pocketbase'
@@ -45,14 +46,36 @@ async function tick() {
   const runDir = path.join(config.runsDir, job.id)
 
   try {
+    await pb.appendJobLog(job.id, 'system', 'Claimed grading job')
+
+    if (await pb.isJobCanceled(job.id)) {
+      await pb.markJobCanceled(job)
+      return
+    }
+
     await pb.prepareRunDir(runDir)
+    await pb.appendJobLog(job.id, 'system', 'Prepared worker run directory')
     const input = await pb.loadJobInput(job, runDir)
+    await pb.appendJobLog(job.id, 'system', 'Downloaded submission archive')
     await pb.writePolicyInput(path.join(input.outputDir, 'policy.json'), input.policy)
+    await pb.appendJobLog(job.id, 'system', 'Wrote policy input')
     await pb.markJobProgress(job.id, 20, 'Running submission sandbox')
-    await runner.run(input)
+    await runner.run(
+      input,
+      () => pb.isJobCanceled(job.id),
+      (stream, message) => pb.appendJobLog(job.id, stream, message)
+    )
     await pb.finishJob(job, path.join(input.outputDir, 'result.json'))
   } catch (cause) {
     console.error(`Job ${job.id} failed`, cause)
+    const resultPath = path.join(runDir, 'output', 'result.json')
+
+    if (existsSync(resultPath)) {
+      await pb.saveFailedResult(job, resultPath).catch((resultCause) => {
+        console.error(`Failed to save result for failed job ${job.id}`, resultCause)
+      })
+    }
+
     await pb.failJob(job, cause)
   }
 }

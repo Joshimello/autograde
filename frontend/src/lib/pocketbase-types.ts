@@ -13,6 +13,7 @@ export const Collections = {
 	Superusers: "_superusers",
 	Deployments: "deployments",
 	EmailWhitelist: "email_whitelist",
+	JobLogs: "job_logs",
 	Jobs: "jobs",
 	Policies: "policies",
 	PolicyImports: "policy_imports",
@@ -123,6 +124,20 @@ export type EmailWhitelistRecord = {
 	notes?: string
 }
 
+export const JobLogsStreamOptions = {
+	"stdout": "stdout",
+	"stderr": "stderr",
+	"system": "system",
+} as const
+export type JobLogsStreamOptions = typeof JobLogsStreamOptions[keyof typeof JobLogsStreamOptions]
+export type JobLogsRecord = {
+	id: string
+	job: RecordIdString
+	message: string
+	sequence: number
+	stream: JobLogsStreamOptions
+}
+
 export const JobsTypeOptions = {
 	"grading": "grading",
 	"deployment": "deployment",
@@ -191,6 +206,7 @@ export type ResultsRecord<TrubricResults = unknown> = {
 export const SubmissionsStatusOptions = {
 	"pending": "pending",
 	"grading": "grading",
+	"needs_review": "needs_review",
 	"graded": "graded",
 	"failed": "failed",
 } as const
@@ -227,6 +243,7 @@ export type OtpsResponse<Texpand = unknown> = Required<OtpsRecord> & BaseSystemF
 export type SuperusersResponse<Texpand = unknown> = Required<SuperusersRecord> & AuthSystemFields<Texpand>
 export type DeploymentsResponse<Texpand = unknown> = Required<DeploymentsRecord> & BaseSystemFields<Texpand>
 export type EmailWhitelistResponse<Texpand = unknown> = Required<EmailWhitelistRecord> & BaseSystemFields<Texpand>
+export type JobLogsResponse<Texpand = unknown> = Required<JobLogsRecord> & BaseSystemFields<Texpand>
 export type JobsResponse<Texpand = unknown> = Required<JobsRecord> & BaseSystemFields<Texpand>
 export type PoliciesResponse<Tcriteria = unknown, Texpand = unknown> = Required<PoliciesRecord<Tcriteria>> & BaseSystemFields<Texpand>
 export type PolicyImportsResponse<Texpand = unknown> = Required<PolicyImportsRecord> & BaseSystemFields<Texpand>
@@ -244,6 +261,7 @@ export type CollectionRecords = {
 	_superusers: SuperusersRecord
 	deployments: DeploymentsRecord
 	email_whitelist: EmailWhitelistRecord
+	job_logs: JobLogsRecord
 	jobs: JobsRecord
 	policies: PoliciesRecord
 	policy_imports: PolicyImportsRecord
@@ -260,6 +278,7 @@ export type CollectionResponses = {
 	_superusers: SuperusersResponse
 	deployments: DeploymentsResponse
 	email_whitelist: EmailWhitelistResponse
+	job_logs: JobLogsResponse
 	jobs: JobsResponse
 	policies: PoliciesResponse
 	policy_imports: PolicyImportsResponse

@@ -15,6 +15,7 @@ export type WorkerConfig = {
   anthropicBaseUrl: string
   anthropicAuthToken: string
   anthropicModel: string
+  anthropicDefaultHaikuModel: string
 }
 
 function optionalEnv(name: string, fallback: string) {
@@ -68,5 +69,6 @@ export function loadConfig(): WorkerConfig {
     anthropicBaseUrl: requiredEnv('ANTHROPIC_BASE_URL'),
     anthropicAuthToken: requiredEnv('ANTHROPIC_AUTH_TOKEN'),
     anthropicModel: requiredEnv('ANTHROPIC_MODEL'),
+    anthropicDefaultHaikuModel: optionalEnv('ANTHROPIC_DEFAULT_HAIKU_MODEL', ''),
   }
 }

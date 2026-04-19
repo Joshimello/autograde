@@ -1,15 +1,22 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import PocketBase from 'pocketbase'
 import type { WorkerConfig } from './config'
 import { parseRunnerResult } from './result'
-import type { JobRecord, PolicyRecord, SubmissionRecord } from './types'
+import {
+  JobCanceledError,
+  type JobRecord,
+  type JobLogStream,
+  type PolicyRecord,
+  type SubmissionRecord,
+} from './types'
 
 export type PocketBaseClient = ReturnType<typeof createPocketBaseClient>
 
 export function createPocketBaseClient(config: WorkerConfig) {
   const pb = new PocketBase(config.pocketbaseUrl)
   pb.autoCancellation(false)
+  const logSequences = new Map<string, number>()
 
   async function authenticate() {
     await pb
@@ -54,6 +61,7 @@ export function createPocketBaseClient(config: WorkerConfig) {
     const outputDir = path.join(runDir, 'output')
 
     await mkdir(outputDir, { recursive: true })
+    await chmod(outputDir, 0o777)
     await downloadArchive(submission, archivePath)
 
     return {
@@ -69,6 +77,51 @@ export function createPocketBaseClient(config: WorkerConfig) {
       progress,
       message,
     })
+    await appendJobLog(jobId, 'system', message)
+  }
+
+  async function appendJobLog(
+    jobId: string,
+    stream: JobLogStream,
+    message: string
+  ) {
+    const cleaned = sanitizeLogMessage(message)
+
+    if (!cleaned.trim()) {
+      return
+    }
+
+    const sequence = logSequences.get(jobId) ?? 0
+    logSequences.set(jobId, sequence + 1)
+
+    try {
+      await pb.collection('job_logs').create({
+        job: jobId,
+        sequence,
+        stream,
+        message: cleaned.slice(0, 10000),
+      })
+    } catch (cause) {
+      console.error('Failed to create job log', formatPocketBaseError(cause))
+    }
+  }
+
+  async function isJobCanceled(jobId: string) {
+    const job = (await pb.collection('jobs').getOne(jobId)) as unknown as JobRecord
+
+    return job.status === 'canceled'
+  }
+
+  async function markJobCanceled(job: JobRecord) {
+    await pb.collection('submissions').update(job.submission, {
+      status: 'pending',
+    })
+    await pb.collection('jobs').update(job.id, {
+      status: 'canceled',
+      message: 'AI grading canceled',
+      finishedAt: new Date().toISOString(),
+    })
+    await appendJobLog(job.id, 'system', 'AI grading canceled')
   }
 
   async function finishJob(job: JobRecord, resultPath: string) {
@@ -80,7 +133,7 @@ export function createPocketBaseClient(config: WorkerConfig) {
 
     await replaceResult(submission, result)
     await pb.collection('submissions').update(submission.id, {
-      status: 'graded',
+      status: 'needs_review',
     })
     await pb.collection('jobs').update(job.id, {
       status: 'succeeded',
@@ -89,20 +142,38 @@ export function createPocketBaseClient(config: WorkerConfig) {
       finishedAt: new Date().toISOString(),
       error: '',
     })
+    await appendJobLog(job.id, 'system', 'Grading completed')
+  }
+
+  async function saveFailedResult(job: JobRecord, resultPath: string) {
+    const raw = await readFile(resultPath, 'utf8')
+    const result = parseRunnerResult(JSON.parse(raw))
+    const submission = (await pb
+      .collection('submissions')
+      .getOne(job.submission)) as unknown as SubmissionRecord
+
+    await replaceResult(submission, result)
   }
 
   async function failJob(job: JobRecord, cause: unknown) {
+    if (cause instanceof JobCanceledError) {
+      await markJobCanceled(job)
+      return
+    }
+
     const message = formatError(cause)
+    const summary = message.split('\n').find((line) => line.trim()) ?? message
 
     await pb.collection('submissions').update(job.submission, {
       status: 'failed',
     })
     await pb.collection('jobs').update(job.id, {
       status: 'failed',
-      message: message.slice(0, 2000),
+      message: summary.slice(0, 2000),
       error: message.slice(0, 5000),
       finishedAt: new Date().toISOString(),
     })
+    await appendJobLog(job.id, 'system', `Job failed: ${summary}`)
   }
 
   async function prepareRunDir(runDir: string) {
@@ -165,14 +236,22 @@ export function createPocketBaseClient(config: WorkerConfig) {
 
   return {
     authenticate,
+    appendJobLog,
     claimNextJob,
     failJob,
     finishJob,
+    isJobCanceled,
     loadJobInput,
+    markJobCanceled,
     markJobProgress,
     prepareRunDir,
+    saveFailedResult,
     writePolicyInput,
   }
+}
+
+function sanitizeLogMessage(value: string) {
+  return value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '')
 }
 
 function isNotFound(cause: unknown) {
@@ -190,4 +269,16 @@ function formatError(cause: unknown) {
   }
 
   return String(cause)
+}
+
+function formatPocketBaseError(cause: unknown) {
+  if (
+    typeof cause === 'object' &&
+    cause !== null &&
+    'response' in cause
+  ) {
+    return JSON.stringify(cause.response, null, 2)
+  }
+
+  return formatError(cause)
 }

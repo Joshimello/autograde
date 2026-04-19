@@ -23,16 +23,28 @@ MAX_EXTRACTED_BYTES = int(os.getenv("MAX_EXTRACTED_BYTES", str(500 * 1024 * 1024
 
 
 def main():
+    log("Preparing submission runner")
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     policy = read_json(POLICY_PATH)
 
     try:
+        log("Extracting archive")
         safe_extract(INPUT_ARCHIVE, SOURCE_DIR)
+        log("Archive extracted")
+        log("Locking source directory read-only")
         make_read_only(SOURCE_DIR)
+        log("Attempting build")
         build_status, build_summary = attempt_build()
+        log(f"Build status: {build_status}")
+        log("Running Claude Code")
         result = grade_with_claude(policy, build_status, build_summary)
+        log("Claude Code completed")
+        log("Writing result.json")
         write_result(result)
+        log("Submission runner completed")
     except Exception as exc:
+        log(f"Submission runner failed: {exc}")
+        write_diagnostic_file(exc)
         fallback = build_failure_result(policy, str(exc))
         write_result(fallback)
         print(str(exc), file=sys.stderr)
@@ -42,6 +54,10 @@ def main():
 def read_json(path):
     with path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def log(message):
+    print(message, flush=True)
 
 
 def safe_extract(archive_path, target_dir):
@@ -96,6 +112,7 @@ def attempt_build():
     if not project_root:
         summary = "No package.json was found, so the build step was skipped."
         BUILD_LOG_PATH.write_text(summary, encoding="utf-8")
+        log(summary)
         return "skipped", summary
 
     package_json = read_json(project_root / "package.json")
@@ -104,12 +121,14 @@ def attempt_build():
     if "build" not in scripts:
         summary = "package.json has no build script, so the build step was skipped."
         BUILD_LOG_PATH.write_text(summary, encoding="utf-8")
+        log(summary)
         return "skipped", summary
 
     commands = build_commands(project_root)
     log_parts = []
 
     for command in commands:
+        log(f"$ {command}")
         completed = subprocess.run(
             command,
             cwd=project_root,
@@ -122,13 +141,18 @@ def attempt_build():
         log_parts.append(f"$ {command}\n{completed.stdout}")
 
         if completed.returncode != 0:
-            log = "\n\n".join(log_parts)
-            BUILD_LOG_PATH.write_text(trim(log, 20000), encoding="utf-8")
-            return "failed", trim(log, 4000)
+            build_log = "\n\n".join(log_parts)
+            BUILD_LOG_PATH.write_text(trim(build_log, 20000), encoding="utf-8")
+            print(trim(completed.stdout, 4000), flush=True)
+            log(f"Build command failed with exit code {completed.returncode}")
+            return "failed", trim(build_log, 4000)
 
-    log = "\n\n".join(log_parts)
-    BUILD_LOG_PATH.write_text(trim(log, 20000), encoding="utf-8")
-    return "passed", trim(log or "Build passed.", 4000)
+        print(trim(completed.stdout, 4000), flush=True)
+
+    build_log = "\n\n".join(log_parts)
+    BUILD_LOG_PATH.write_text(trim(build_log, 20000), encoding="utf-8")
+    log("Build passed")
+    return "passed", trim(build_log or "Build passed.", 4000)
 
 
 def find_project_root(root):
@@ -163,6 +187,10 @@ def grade_with_claude(policy, build_status, build_summary):
     env["ANTHROPIC_AUTH_TOKEN"] = required_env("ANTHROPIC_AUTH_TOKEN")
     env["ANTHROPIC_BASE_URL"] = required_env("ANTHROPIC_BASE_URL")
     env["ANTHROPIC_MODEL"] = required_env("ANTHROPIC_MODEL")
+    default_haiku_model = os.getenv("ANTHROPIC_DEFAULT_HAIKU_MODEL")
+
+    if default_haiku_model:
+        env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = default_haiku_model
 
     completed = subprocess.run(
         [
@@ -268,6 +296,18 @@ def build_failure_result(policy, error):
     }
 
 
+def write_diagnostic_file(error):
+    diagnostic = {
+        "error": str(error),
+        "buildLog": read_optional(BUILD_LOG_PATH, 20000),
+        "claudeOutput": read_optional(CLAUDE_OUTPUT_PATH, 40000),
+    }
+    (OUTPUT_DIR / "diagnostics.json").write_text(
+        json.dumps(diagnostic, indent=2),
+        encoding="utf-8",
+    )
+
+
 def write_result(result):
     RESULT_PATH.write_text(json.dumps(result, indent=2), encoding="utf-8")
 
@@ -292,6 +332,13 @@ def number_or_zero(value):
 
 def trim(value, limit):
     return value if len(value) <= limit else value[-limit:]
+
+
+def read_optional(path, limit):
+    if not path.exists():
+        return ""
+
+    return trim(path.read_text(encoding="utf-8", errors="replace"), limit)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,12 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import Docker from 'dockerode'
 import type { WorkerConfig } from './config'
-import type { RunnerInput, RunnerOutput } from './types'
+import {
+  JobCanceledError,
+  type RunnerInput,
+  type RunnerLogSink,
+  type RunnerOutput,
+} from './types'
 import { parseRunnerResult } from './result'
 
 export class DockerRunner {
@@ -10,18 +15,28 @@ export class DockerRunner {
 
   constructor(private readonly config: WorkerConfig) {}
 
-  async run(input: RunnerInput): Promise<RunnerOutput> {
+  async run(
+    input: RunnerInput,
+    shouldCancel?: () => Promise<boolean>,
+    onLog?: RunnerLogSink
+  ): Promise<RunnerOutput> {
     const policyPath = path.join(input.outputDir, 'policy.json')
     const resultPath = path.join(input.outputDir, 'result.json')
     const containerName = `submission-runner-${input.submission.id}-${Date.now()}`
     const container = await this.docker.createContainer({
       Image: this.config.runnerImage,
       name: containerName,
+      Tty: true,
       Env: [
         `SUBMISSION_LABEL=${input.submission.label}`,
         `ANTHROPIC_BASE_URL=${this.config.anthropicBaseUrl}`,
         `ANTHROPIC_AUTH_TOKEN=${this.config.anthropicAuthToken}`,
         `ANTHROPIC_MODEL=${this.config.anthropicModel}`,
+        ...(this.config.anthropicDefaultHaikuModel
+          ? [
+              `ANTHROPIC_DEFAULT_HAIKU_MODEL=${this.config.anthropicDefaultHaikuModel}`,
+            ]
+          : []),
         `INPUT_ARCHIVE=${input.archivePath}`,
         `POLICY_PATH=${policyPath}`,
         `OUTPUT_DIR=${input.outputDir}`,
@@ -43,22 +58,48 @@ export class DockerRunner {
     })
 
     try {
+      const attached = await container.attach({
+        stream: true,
+        stdout: true,
+        stderr: true,
+      })
+      const liveLog = collectLiveLogs(attached, onLog)
       await container.start()
+      const cancelPoll = pollForCancellation(async () => {
+        if (await shouldCancel?.()) {
+          await container.stop({ t: 5 }).catch(() => undefined)
+          throw new JobCanceledError()
+        }
+      })
       const waitResult = await withTimeout(
-        container.wait(),
+        Promise.race([container.wait(), cancelPoll]),
         this.config.jobTimeoutMs,
         async () => {
           await container.stop({ t: 5 }).catch(() => undefined)
         }
       )
+      await Promise.race([liveLog, sleep(1000)])
+      destroyStream(attached)
+      await liveLog.catch(() => undefined)
       const logsBuffer = await container.logs({
         stdout: true,
         stderr: true,
       })
-      const logs = logsBuffer.toString('utf8')
+      const logs = sanitizeDockerLogs(logsBuffer.toString('utf8'))
 
       if (waitResult.StatusCode !== 0) {
-        throw new Error(`submission-runner exited with ${waitResult.StatusCode}\n${logs}`)
+        const diagnostics = await readOptional(path.join(input.outputDir, 'diagnostics.json'))
+        const resultJson = await readOptional(resultPath)
+        throw new Error(
+          [
+            `submission-runner exited with ${waitResult.StatusCode}`,
+            diagnostics ? `diagnostics.json:\n${diagnostics}` : '',
+            resultJson ? `result.json:\n${resultJson}` : '',
+            logs ? `container logs:\n${logs}` : '',
+          ]
+            .filter(Boolean)
+            .join('\n\n')
+        )
       }
 
       const raw = await readFile(resultPath, 'utf8')
@@ -72,6 +113,56 @@ export class DockerRunner {
       await container.remove({ force: true }).catch(() => undefined)
     }
   }
+}
+
+async function collectLiveLogs(
+  stream: NodeJS.ReadWriteStream,
+  onLog?: RunnerLogSink
+) {
+  if (!onLog) {
+    stream.resume()
+    return
+  }
+
+  for await (const chunk of stream as AsyncIterable<Buffer>) {
+    const message = sanitizeDockerLogs(String(chunk))
+
+    if (message.trim()) {
+      process.stdout.write(message.endsWith('\n') ? message : `${message}\n`)
+      await onLog('stdout', message).catch((cause) => {
+        console.error('Failed to persist runner log', cause)
+      })
+    }
+  }
+}
+
+async function readOptional(filePath: string) {
+  try {
+    return await readFile(filePath, 'utf8')
+  } catch {
+    return ''
+  }
+}
+
+async function pollForCancellation(check: () => Promise<void>): Promise<never> {
+  while (true) {
+    await check()
+    await sleep(1000)
+  }
+}
+
+function sanitizeDockerLogs(value: string) {
+  return value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '')
+}
+
+function destroyStream(stream: NodeJS.ReadWriteStream) {
+  if ('destroy' in stream && typeof stream.destroy === 'function') {
+    stream.destroy()
+  }
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 async function withTimeout<T>(

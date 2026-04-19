@@ -24,6 +24,8 @@ export type JobRecord = {
   attempts?: number
 }
 
+export type JobLogStream = 'stdout' | 'stderr' | 'system'
+
 export type RunnerInput = {
   archivePath: string
   outputDir: string
@@ -34,4 +36,13 @@ export type RunnerInput = {
 export type RunnerOutput = {
   result: RunnerResult
   logs: string
+}
+
+export type RunnerLogSink = (stream: JobLogStream, message: string) => Promise<void>
+
+export class JobCanceledError extends Error {
+  constructor() {
+    super('AI grading was canceled.')
+    this.name = 'JobCanceledError'
+  }
 }

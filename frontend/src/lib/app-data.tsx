@@ -31,10 +31,17 @@ export type Policy = {
   criteria: RubricCriterion[]
 }
 
-export type SubmissionStatus = 'pending' | 'grading' | 'graded' | 'failed'
+export type SubmissionStatus =
+  | 'pending'
+  | 'grading'
+  | 'needs_review'
+  | 'graded'
+  | 'failed'
 
 export type CriterionGrade = {
   criterionId: string
+  label?: string
+  maxScore?: number
   score: number
   feedback: string
 }
@@ -44,6 +51,7 @@ export type Submission = {
   label: string
   policyId: string
   fileName: string
+  fileUrl: string
   status: SubmissionStatus
   grades: CriterionGrade[]
 }
@@ -61,6 +69,18 @@ export type GradingJob = {
   status: GradingJobStatus
   progress: number
   message: string
+  error: string
+  startedAt: string
+}
+
+export type JobLogStream = 'stdout' | 'stderr' | 'system'
+
+export type JobLog = {
+  id: string
+  jobId: string
+  sequence: number
+  stream: JobLogStream
+  message: string
 }
 
 export type BuildStatus = 'passed' | 'failed' | 'skipped'
@@ -68,6 +88,7 @@ export type BuildStatus = 'passed' | 'failed' | 'skipped'
 export type SubmissionResult = {
   id: string
   submissionId: string
+  created: string
   score: number
   maxScore: number
   buildStatus: BuildStatus | ''
@@ -127,9 +148,21 @@ type SubmissionRecord = {
 type GradingJobRecord = {
   id: string
   created?: string
+  type?: string
   submission?: string
   status?: GradingJobStatus
   progress?: number
+  message?: string
+  error?: string
+  startedAt?: string
+}
+
+type JobLogRecord = {
+  id: string
+  created?: string
+  job?: string
+  sequence?: number
+  stream?: JobLogStream
   message?: string
 }
 
@@ -176,6 +209,10 @@ type NewSubmission = {
   policyId: string
   archive: File
 }
+type SubmissionUpdate = {
+  label: string
+  policyId: string
+}
 type NewPolicyImport = {
   label: string
   sourceFile: File
@@ -192,6 +229,7 @@ type AppDataContextValue = {
   policies: Policy[]
   submissions: Submission[]
   jobs: GradingJob[]
+  jobLogs: JobLog[]
   results: SubmissionResult[]
   policyImports: PolicyImport[]
   whitelist: WhitelistEntry[]
@@ -207,7 +245,12 @@ type AppDataContextValue = {
   deletePolicy: (policyId: string) => Promise<boolean>
   importPolicyDocument: (policyImport: NewPolicyImport) => Promise<void>
   addSubmission: (submission: NewSubmission) => Promise<void>
+  updateSubmission: (
+    submissionId: string,
+    submission: SubmissionUpdate
+  ) => Promise<void>
   startSubmissionGrading: (submissionId: string) => Promise<void>
+  cancelSubmissionGrading: (jobId: string) => Promise<void>
   deleteSubmission: (submissionId: string) => Promise<void>
   saveSubmissionGrades: (
     submissionId: string,
@@ -224,6 +267,7 @@ type AppDataContextValue = {
   getSubmissionScore: (submission: Submission) => number
   getSubmissionJob: (submissionId: string) => GradingJob | null
   getSubmissionResult: (submissionId: string) => SubmissionResult | null
+  getJobLogs: (jobId: string) => JobLog[]
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null)
@@ -280,6 +324,11 @@ function toGrades(value: unknown): CriterionGrade[] {
 
       return {
         criterionId,
+        label: candidate.label ? String(candidate.label) : undefined,
+        maxScore:
+          typeof candidate.maxScore === 'number'
+            ? candidate.maxScore
+            : undefined,
         score: Number(candidate.score) || 0,
         feedback: String(candidate.feedback ?? ''),
       }
@@ -297,11 +346,14 @@ function mapPolicy(record: PolicyRecord): Policy {
 }
 
 function mapSubmission(record: SubmissionRecord): Submission {
+  const fileName = record.archive ?? ''
+
   return {
     id: record.id,
     label: record.label ?? 'Untitled submission',
     policyId: record.policy ?? '',
-    fileName: record.archive ?? '',
+    fileName,
+    fileUrl: fileName ? pb.files.getURL(record, fileName) : '',
     status: record.status ?? 'pending',
     grades: toGrades(record.manualGrades),
   }
@@ -311,8 +363,21 @@ function mapJob(record: GradingJobRecord): GradingJob {
   return {
     id: record.id,
     submissionId: record.submission ?? '',
+    created: record.created ?? '',
     status: record.status ?? 'queued',
     progress: record.progress ?? 0,
+    message: record.message ?? '',
+    error: record.error ?? '',
+    startedAt: record.startedAt ?? '',
+  }
+}
+
+function mapJobLog(record: JobLogRecord): JobLog {
+  return {
+    id: record.id,
+    jobId: record.job ?? '',
+    sequence: record.sequence ?? 0,
+    stream: record.stream ?? 'stdout',
     message: record.message ?? '',
   }
 }
@@ -370,6 +435,48 @@ function mapWhitelistEntry(record: WhitelistRecord): WhitelistEntry {
   }
 }
 
+function sortJobLogs(logs: JobLog[]) {
+  return logs.toSorted((first, second) => {
+    if (first.jobId !== second.jobId) {
+      return first.jobId.localeCompare(second.jobId)
+    }
+
+    return first.sequence - second.sequence
+  })
+}
+
+function getLatestSubmissionJob(jobs: GradingJob[], submissionId: string) {
+  const relatedJobs = jobs.filter((job) => job.submissionId === submissionId)
+
+  if (relatedJobs.length === 0) {
+    return null
+  }
+
+  const activeJob = relatedJobs.find(
+    (job) => job.status === 'queued' || job.status === 'running'
+  )
+
+  if (activeJob) {
+    return activeJob
+  }
+
+  return relatedJobs.toSorted((first, second) =>
+    second.startedAt.localeCompare(first.startedAt)
+  )[0]
+}
+
+function getLatestSubmissionResult(
+  results: SubmissionResult[],
+  submissionId: string
+) {
+  return (
+    results
+      .filter((result) => result.submissionId === submissionId)
+      .toSorted((first, second) => second.created.localeCompare(first.created))[0] ??
+    null
+  )
+}
+
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase()
 }
@@ -381,6 +488,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [policies, setPolicies] = useState<Policy[]>([])
   const [submissions, setSubmissions] = useState<Submission[]>([])
   const [jobs, setJobs] = useState<GradingJob[]>([])
+  const [jobLogs, setJobLogs] = useState<JobLog[]>([])
   const [results, setResults] = useState<SubmissionResult[]>([])
   const [policyImports, setPolicyImports] = useState<PolicyImport[]>([])
   const [whitelist, setWhitelist] = useState<WhitelistEntry[]>([])
@@ -392,6 +500,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     setPolicies([])
     setSubmissions([])
     setJobs([])
+    setJobLogs([])
     setResults([])
     setPolicyImports([])
     setWhitelist([])
@@ -412,6 +521,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         policyRecords,
         submissionRecords,
         jobRecords,
+        jobLogRecords,
         resultRecords,
         policyImportRecords,
       ] = await Promise.all([
@@ -420,6 +530,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           pb.collection(Collections.Jobs).getFullList({
             filter: 'type = "grading"',
           }),
+          pb.collection(Collections.JobLogs).getFullList(),
           pb.collection(Collections.Results).getFullList(),
           pb.collection(Collections.PolicyImports).getFullList(),
         ])
@@ -443,6 +554,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           )
           .map(mapJob)
       )
+      setJobLogs(sortJobLogs((jobLogRecords as JobLogRecord[]).map(mapJobLog)))
       setResults(
         (resultRecords as ResultRecord[])
           .toSorted((first, second) =>
@@ -467,6 +579,74 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       setLoading(false)
     }
   }, [clearData])
+
+  useEffect(() => {
+    if (!authenticated) {
+      return
+    }
+
+    let active = true
+    const unsubscribers: Array<() => void> = []
+
+    void Promise.all([
+      pb.collection(Collections.Jobs).subscribe('*', (event) => {
+        const record = event.record as GradingJobRecord
+
+        if (record.type && record.type !== 'grading') {
+          return
+        }
+
+        if (event.action === 'delete') {
+          setJobs((current) => current.filter((job) => job.id !== record.id))
+          return
+        }
+
+        const nextJob = mapJob(record)
+        setJobs((current) => {
+          const withoutJob = current.filter((job) => job.id !== nextJob.id)
+          return [nextJob, ...withoutJob]
+        })
+      }),
+      pb.collection(Collections.JobLogs).subscribe('*', (event) => {
+        const record = event.record as JobLogRecord
+
+        if (event.action === 'delete') {
+          setJobLogs((current) => current.filter((log) => log.id !== record.id))
+          return
+        }
+
+        const nextLog = mapJobLog(record)
+        setJobLogs((current) =>
+          sortJobLogs([
+            ...current.filter((log) => log.id !== nextLog.id),
+            nextLog,
+          ])
+        )
+      }),
+      pb.collection(Collections.Submissions).subscribe('*', () => {
+        void refresh()
+      }),
+      pb.collection(Collections.Results).subscribe('*', () => {
+        void refresh()
+      }),
+    ])
+      .then((handlers) => {
+        if (!active) {
+          handlers.forEach((unsubscribe) => unsubscribe())
+          return
+        }
+
+        unsubscribers.push(...handlers)
+      })
+      .catch((cause) => {
+        console.error('Realtime subscription failed', cause)
+      })
+
+    return () => {
+      active = false
+      unsubscribers.forEach((unsubscribe) => unsubscribe())
+    }
+  }, [authenticated, refresh])
 
   const refreshWhitelist = useCallback(async () => {
     if (!pb.authStore.isValid) {
@@ -528,6 +708,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       policies,
       submissions,
       jobs,
+      jobLogs,
       results,
       policyImports,
       whitelist,
@@ -605,6 +786,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         })
         await refresh()
       },
+      updateSubmission: async (submissionId, submission) => {
+        await pb.collection(Collections.Submissions).update(submissionId, {
+          label: submission.label,
+          policy: submission.policyId,
+        })
+        await refresh()
+      },
       startSubmissionGrading: async (submissionId) => {
         await pb.collection(Collections.Jobs).create({
           submission: submissionId,
@@ -615,6 +803,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         })
         await pb.collection(Collections.Submissions).update(submissionId, {
           status: 'grading',
+        })
+        await refresh()
+      },
+      cancelSubmissionGrading: async (jobId) => {
+        await pb.collection(Collections.Jobs).update(jobId, {
+          status: 'canceled',
+          message: 'Cancel requested',
         })
         await refresh()
       },
@@ -656,9 +851,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       getSubmissionScore: (submission) =>
         submission.grades.reduce((total, grade) => total + grade.score, 0),
       getSubmissionJob: (submissionId) =>
-        jobs.find((job) => job.submissionId === submissionId) ?? null,
+        getLatestSubmissionJob(jobs, submissionId),
       getSubmissionResult: (submissionId) =>
-        results.find((result) => result.submissionId === submissionId) ?? null,
+        getLatestSubmissionResult(results, submissionId),
+      getJobLogs: (jobId) => jobLogs.filter((log) => log.jobId === jobId),
     }),
     [
       authError,
@@ -668,6 +864,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       error,
       loading,
       jobs,
+      jobLogs,
       policies,
       policyImports,
       refresh,

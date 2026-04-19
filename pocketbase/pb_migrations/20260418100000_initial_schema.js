@@ -175,7 +175,7 @@ migrate((app) => {
       name: 'status',
       required: true,
       maxSelect: 1,
-      values: ['pending', 'grading', 'graded', 'failed'],
+      values: ['pending', 'grading', 'needs_review', 'graded', 'failed'],
     }),
     new JSONField({
       name: 'manualGrades',
@@ -246,6 +246,46 @@ migrate((app) => {
   )
   applyAppRules(jobs)
   app.save(jobs)
+
+  const jobLogs = new Collection({
+    type: 'base',
+    name: 'job_logs',
+    indexes: [
+      'CREATE INDEX idx_job_logs_job ON job_logs (job)',
+      'CREATE INDEX idx_job_logs_sequence ON job_logs (sequence)',
+    ],
+  })
+  jobLogs.fields.add(
+    new RelationField({
+      name: 'job',
+      required: true,
+      collectionId: jobs.id,
+      maxSelect: 1,
+      cascadeDelete: true,
+    }),
+    new NumberField({
+      name: 'sequence',
+      required: true,
+      min: 0,
+    }),
+    new SelectField({
+      name: 'stream',
+      required: true,
+      maxSelect: 1,
+      values: ['stdout', 'stderr', 'system'],
+    }),
+    new TextField({
+      name: 'message',
+      required: true,
+      max: 10000,
+    })
+  )
+  jobLogs.listRule = appRule
+  jobLogs.viewRule = appRule
+  jobLogs.createRule = null
+  jobLogs.updateRule = null
+  jobLogs.deleteRule = null
+  app.save(jobLogs)
 
   const results = new Collection({
     type: 'base',
@@ -337,6 +377,7 @@ migrate((app) => {
   const names = [
     'deployments',
     'results',
+    'job_logs',
     'jobs',
     'submissions',
     'policy_imports',
