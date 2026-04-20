@@ -6,10 +6,12 @@ services:
       target: production
       args:
         VITE_POCKETBASE_URL: ${VITE_POCKETBASE_URL:-http://127.0.0.1:8090}
+        VITE_ALLOWED_HOSTS: ${VITE_ALLOWED_HOSTS:-}
     depends_on:
       - pocketbase
     environment:
       VITE_POCKETBASE_URL: ${VITE_POCKETBASE_URL:-http://127.0.0.1:8090}
+      VITE_ALLOWED_HOSTS: ${VITE_ALLOWED_HOSTS:-}
     ports:
       - "3000:3000"
     networks:

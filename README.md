@@ -83,6 +83,7 @@ ANTHROPIC_MODEL=
 ANTHROPIC_DEFAULT_HAIKU_MODEL=
 SUBMISSIONS_WORKER_CONCURRENCY=2
 VITE_POCKETBASE_URL=http://127.0.0.1:8090
+VITE_ALLOWED_HOSTS=
 ```
 
 Start the full stack:
@@ -92,6 +93,8 @@ docker compose up --build
 ```
 
 The app runs at `http://localhost:3000`. PocketBase runs at `http://localhost:8090`, with the Dashboard at `http://localhost:8090/_/`. Use the Dashboard as an inspector; schema changes belong in `pocketbase/pb_migrations`.
+
+If serving the frontend through another hostname, set `VITE_ALLOWED_HOSTS` to a comma-separated list, for example `VITE_ALLOWED_HOSTS=vmlab.taile6aa05.ts.net`.
 
 For frontend development with a bind mount and Vite HMR, use the dev override:
 

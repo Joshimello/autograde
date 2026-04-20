@@ -7,6 +7,7 @@ services:
     command: bun --bun run dev --host 0.0.0.0
     environment:
       VITE_POCKETBASE_URL: ${VITE_POCKETBASE_URL:-http://127.0.0.1:8090}
+      VITE_ALLOWED_HOSTS: ${VITE_ALLOWED_HOSTS:-}
       CHOKIDAR_USEPOLLING: "true"
     volumes:
       - ./frontend:/app
