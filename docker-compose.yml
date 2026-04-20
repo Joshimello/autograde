@@ -1,4 +1,20 @@
 services:
+  frontend:
+    image: autograde-frontend:latest
+    build:
+      context: ./frontend
+      target: production
+      args:
+        VITE_POCKETBASE_URL: ${VITE_POCKETBASE_URL:-http://127.0.0.1:8090}
+    depends_on:
+      - pocketbase
+    environment:
+      VITE_POCKETBASE_URL: ${VITE_POCKETBASE_URL:-http://127.0.0.1:8090}
+    ports:
+      - "3000:3000"
+    networks:
+      - runtime
+
   pocketbase:
     build:
       context: ./pocketbase

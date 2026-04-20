@@ -10,7 +10,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "typegen": "pocketbase-typegen --url http://127.0.0.1:8090 --email \"$PB_TYPEGEN_EMAIL\" --password \"$PB_TYPEGEN_PASSWORD\" --out src/lib/pocketbase-types.ts"
+    "typegen": "bunx --bun pocketbase-typegen --url http://127.0.0.1:8090 --email \"$PB_TYPEGEN_EMAIL\" --password \"$PB_TYPEGEN_PASSWORD\" --out src/lib/pocketbase-types.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",
@@ -41,7 +41,6 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.0.1",
     "jsdom": "^28.1.0",
-    "pocketbase-typegen": "^1.4.0",
     "typescript": "^5.7.2",
     "vite": "^8.0.0",
     "vitest": "^3.0.5"

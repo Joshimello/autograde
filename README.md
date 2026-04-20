@@ -82,25 +82,28 @@ ANTHROPIC_AUTH_TOKEN=
 ANTHROPIC_MODEL=
 ANTHROPIC_DEFAULT_HAIKU_MODEL=
 SUBMISSIONS_WORKER_CONCURRENCY=2
+VITE_POCKETBASE_URL=http://127.0.0.1:8090
 ```
 
-Start the backend, workers, and sandbox images:
+Start the full stack:
 
 ```bash
 docker compose up --build
 ```
 
-PocketBase runs at `http://localhost:8090`. The Dashboard is available at `http://localhost:8090/_/` and should be used as an inspector; schema changes belong in `pocketbase/pb_migrations`.
+The app runs at `http://localhost:3000`. PocketBase runs at `http://localhost:8090`, with the Dashboard at `http://localhost:8090/_/`. Use the Dashboard as an inspector; schema changes belong in `pocketbase/pb_migrations`.
 
-Run the frontend separately:
+For frontend development with a bind mount and Vite HMR, use the dev override:
 
 ```bash
-cd frontend
-bun install
-bun --bun run dev
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build frontend
 ```
 
-Open `http://localhost:3000`.
+To run the whole stack with the frontend in dev mode:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+```
 
 ## Common Commands
 
@@ -120,6 +123,9 @@ cd policies-worker && bun run typecheck && bun test
 # Reload only one worker after env/code changes
 docker compose up -d --no-deps --build --force-recreate submissions-worker
 docker compose up -d --no-deps --build --force-recreate policies-worker
+
+# Rebuild only the frontend container
+docker compose up -d --no-deps --build --force-recreate frontend
 ```
 
 ## Notes
