@@ -1,6 +1,14 @@
 migrate((app) => {
   const appRule = '@request.auth.id != "" && @request.auth.allowed = true'
   const policies = app.findCollectionByNameOrId('policies')
+
+  try {
+    app.findCollectionByNameOrId('policy_imports')
+    return
+  } catch (_) {
+    // Collection does not exist yet.
+  }
+
   const policyImports = new Collection({
     type: 'base',
     name: 'policy_imports',
