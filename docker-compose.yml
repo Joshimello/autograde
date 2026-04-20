@@ -18,6 +18,9 @@ services:
   pocketbase:
     build:
       context: ./pocketbase
+    environment:
+      POCKETBASE_ADMIN_EMAIL: ${POCKETBASE_ADMIN_EMAIL:-admin@example.com}
+      POCKETBASE_ADMIN_PASSWORD: ${POCKETBASE_ADMIN_PASSWORD:-change-me-please}
     ports:
       - "8090:8090"
     volumes:
