@@ -23,6 +23,8 @@ repo root `.env` values:
 ```bash
 POCKETBASE_ADMIN_EMAIL=admin@example.com
 POCKETBASE_ADMIN_PASSWORD=change-me-please
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
 ```
 
 Changing those values and recreating the container updates the same superuser:
@@ -30,3 +32,8 @@ Changing those values and recreating the container updates the same superuser:
 ```bash
 docker compose up -d --build --force-recreate pocketbase
 ```
+
+If both GitHub OAuth env vars are present, a PocketBase bootstrap hook updates
+the `users` collection OAuth provider settings automatically on startup. For
+local development, the GitHub OAuth app callback URL should be
+`http://127.0.0.1:8090/api/oauth2-redirect`.

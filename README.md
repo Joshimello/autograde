@@ -77,6 +77,8 @@ Required values:
 ```bash
 POCKETBASE_ADMIN_EMAIL=admin@example.com
 POCKETBASE_ADMIN_PASSWORD=change-me-please
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
 ANTHROPIC_BASE_URL=
 ANTHROPIC_AUTH_TOKEN=
 ANTHROPIC_MODEL=
@@ -93,6 +95,8 @@ docker compose up --build
 ```
 
 The app runs at `http://localhost:3000`. PocketBase runs at `http://localhost:8090`, with the Dashboard at `http://localhost:8090/_/`. Use the Dashboard as an inspector; schema changes belong in `pocketbase/pb_migrations`.
+
+GitHub OAuth is configured automatically on PocketBase startup when both `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` are set. In the GitHub OAuth app settings, use `http://127.0.0.1:8090/api/oauth2-redirect` for local development, or your deployed PocketBase origin plus `/api/oauth2-redirect`.
 
 If serving the frontend through another hostname, set `VITE_ALLOWED_HOSTS` to a comma-separated list, for example `VITE_ALLOWED_HOSTS=vmlab.taile6aa05.ts.net`.
 
