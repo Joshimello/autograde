@@ -97,6 +97,21 @@ export type SubmissionResult = {
   rubricResults: CriterionGrade[]
 }
 
+export type DeploymentStatus = 'queued' | 'building' | 'deployed' | 'failed'
+
+export type Deployment = {
+  id: string
+  submissionId: string
+  jobId: string
+  created: string
+  status: DeploymentStatus
+  url: string
+  message: string
+  error: string
+  deployId: string
+  deployedAt: string
+}
+
 export type PolicyImportStatus =
   | 'queued'
   | 'running'
@@ -178,6 +193,19 @@ type ResultRecord = {
   rubricResults?: unknown
 }
 
+type DeploymentRecord = {
+  id: string
+  created?: string
+  submission?: string
+  job?: string
+  status?: DeploymentStatus
+  url?: string
+  message?: string
+  error?: string
+  deployId?: string
+  deployedAt?: string
+}
+
 type PolicyImportRecord = {
   id: string
   created?: string
@@ -231,6 +259,7 @@ type AppDataContextValue = {
   jobs: GradingJob[]
   jobLogs: JobLog[]
   results: SubmissionResult[]
+  deployments: Deployment[]
   policyImports: PolicyImport[]
   whitelist: WhitelistEntry[]
   loading: boolean
@@ -267,7 +296,9 @@ type AppDataContextValue = {
   getSubmissionScore: (submission: Submission) => number
   getSubmissionJob: (submissionId: string) => GradingJob | null
   getSubmissionResult: (submissionId: string) => SubmissionResult | null
+  getSubmissionDeployment: (submissionId: string) => Deployment | null
   getJobLogs: (jobId: string) => JobLog[]
+  retrySubmissionDeployment: (submissionId: string) => Promise<void>
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null)
@@ -385,6 +416,7 @@ function mapJobLog(record: JobLogRecord): JobLog {
 function mapResult(record: ResultRecord): SubmissionResult {
   return {
     id: record.id,
+    created: record.created ?? '',
     submissionId: record.submission ?? '',
     score: record.score ?? 0,
     maxScore: record.maxScore ?? 0,
@@ -392,6 +424,21 @@ function mapResult(record: ResultRecord): SubmissionResult {
     buildLogSummary: record.buildLogSummary ?? '',
     feedback: record.feedback ?? '',
     rubricResults: toGrades(record.rubricResults),
+  }
+}
+
+function mapDeployment(record: DeploymentRecord): Deployment {
+  return {
+    id: record.id,
+    submissionId: record.submission ?? '',
+    jobId: record.job ?? '',
+    created: record.created ?? '',
+    status: record.status ?? 'queued',
+    url: record.url ?? '',
+    message: record.message ?? '',
+    error: record.error ?? '',
+    deployId: record.deployId ?? '',
+    deployedAt: record.deployedAt ?? '',
   }
 }
 
@@ -477,6 +524,32 @@ function getLatestSubmissionResult(
   )
 }
 
+function getLatestSubmissionDeployment(
+  deployments: Deployment[],
+  submissionId: string
+) {
+  const relatedDeployments = deployments.filter(
+    (deployment) => deployment.submissionId === submissionId
+  )
+
+  if (relatedDeployments.length === 0) {
+    return null
+  }
+
+  const activeDeployment = relatedDeployments.find(
+    (deployment) =>
+      deployment.status === 'queued' || deployment.status === 'building'
+  )
+
+  if (activeDeployment) {
+    return activeDeployment
+  }
+
+  return relatedDeployments.toSorted((first, second) =>
+    second.created.localeCompare(first.created)
+  )[0]
+}
+
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase()
 }
@@ -490,6 +563,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<GradingJob[]>([])
   const [jobLogs, setJobLogs] = useState<JobLog[]>([])
   const [results, setResults] = useState<SubmissionResult[]>([])
+  const [deployments, setDeployments] = useState<Deployment[]>([])
   const [policyImports, setPolicyImports] = useState<PolicyImport[]>([])
   const [whitelist, setWhitelist] = useState<WhitelistEntry[]>([])
   const [loading, setLoading] = useState(true)
@@ -502,6 +576,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     setJobs([])
     setJobLogs([])
     setResults([])
+    setDeployments([])
     setPolicyImports([])
     setWhitelist([])
   }, [])
@@ -523,6 +598,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         jobRecords,
         jobLogRecords,
         resultRecords,
+        deploymentRecords,
         policyImportRecords,
       ] = await Promise.all([
           pb.collection(Collections.Policies).getFullList(),
@@ -532,6 +608,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           }),
           pb.collection(Collections.JobLogs).getFullList(),
           pb.collection(Collections.Results).getFullList(),
+          (pb as PocketBase).collection(Collections.Deployments).getFullList(),
           pb.collection(Collections.PolicyImports).getFullList(),
         ])
 
@@ -561,6 +638,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             String(second.created ?? '').localeCompare(String(first.created ?? ''))
           )
           .map(mapResult)
+      )
+      setDeployments(
+        (deploymentRecords as DeploymentRecord[])
+          .toSorted((first, second) =>
+            String(second.created ?? '').localeCompare(String(first.created ?? ''))
+          )
+          .map(mapDeployment)
       )
       setPolicyImports(
         (policyImportRecords as PolicyImportRecord[])
@@ -628,6 +712,24 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       }),
       pb.collection(Collections.Results).subscribe('*', () => {
         void refresh()
+      }),
+      (pb as PocketBase).collection(Collections.Deployments).subscribe('*', (event) => {
+        const record = event.record as DeploymentRecord
+
+        if (event.action === 'delete') {
+          setDeployments((current) =>
+            current.filter((deployment) => deployment.id !== record.id)
+          )
+          return
+        }
+
+        const nextDeployment = mapDeployment(record)
+        setDeployments((current) => {
+          const withoutDeployment = current.filter(
+            (deployment) => deployment.id !== nextDeployment.id
+          )
+          return [nextDeployment, ...withoutDeployment]
+        })
       }),
     ])
       .then((handlers) => {
@@ -710,6 +812,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       jobs,
       jobLogs,
       results,
+      deployments,
       policyImports,
       whitelist,
       loading,
@@ -817,6 +920,48 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         await pb.collection(Collections.Submissions).delete(submissionId)
         await refresh()
       },
+      retrySubmissionDeployment: async (submissionId) => {
+        const existingDeployment = getLatestSubmissionDeployment(
+          deployments,
+          submissionId
+        )
+
+        if (
+          existingDeployment &&
+          (existingDeployment.status === 'queued' ||
+            existingDeployment.status === 'building')
+        ) {
+          throw new Error('A preview deployment is already in progress.')
+        }
+
+        const job = await (pb as PocketBase).collection(Collections.Jobs).create({
+          submission: submissionId,
+          type: 'deployment',
+          status: 'queued',
+          progress: 0,
+          message: 'Queued',
+        })
+
+        try {
+          await (pb as PocketBase).collection(Collections.Deployments).create({
+            submission: submissionId,
+            job: job.id,
+            status: 'queued',
+            url: '',
+            message: 'Queued',
+            error: '',
+            deployId: '',
+          })
+        } catch (cause) {
+          await (pb as PocketBase)
+            .collection(Collections.Jobs)
+            .delete(job.id)
+            .catch(() => undefined)
+          throw cause
+        }
+
+        await refresh()
+      },
       saveSubmissionGrades: async (submissionId, grades) => {
         await pb.collection(Collections.Submissions).update(submissionId, {
           manualGrades: grades,
@@ -854,6 +999,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         getLatestSubmissionJob(jobs, submissionId),
       getSubmissionResult: (submissionId) =>
         getLatestSubmissionResult(results, submissionId),
+      getSubmissionDeployment: (submissionId) =>
+        getLatestSubmissionDeployment(deployments, submissionId),
       getJobLogs: (jobId) => jobLogs.filter((log) => log.jobId === jobId),
     }),
     [
@@ -867,6 +1014,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       jobLogs,
       policies,
       policyImports,
+      deployments,
       refresh,
       refreshWhitelist,
       results,

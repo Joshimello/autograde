@@ -102,11 +102,22 @@ def make_read_only(path):
     os.chmod(path, 0o555)
 
 
+def make_writable(path):
+    for root, dirs, files in os.walk(path):
+        for directory in dirs:
+            os.chmod(Path(root) / directory, 0o755)
+        for file_name in files:
+            os.chmod(Path(root) / file_name, 0o644)
+
+    os.chmod(path, 0o755)
+
+
 def attempt_build():
     if BUILD_DIR.exists():
         shutil.rmtree(BUILD_DIR)
 
     shutil.copytree(SOURCE_DIR, BUILD_DIR)
+    make_writable(BUILD_DIR)
     project_root = find_project_root(BUILD_DIR)
 
     if not project_root:
@@ -156,12 +167,19 @@ def attempt_build():
 
 
 def find_project_root(root):
-    candidates = [root]
-    candidates.extend(path for path in root.iterdir() if path.is_dir())
+    queue = [root]
 
-    for candidate in candidates:
+    while queue:
+        candidate = queue.pop(0)
+
         if (candidate / "package.json").exists():
             return candidate
+
+        children = sorted(
+            [path for path in candidate.iterdir() if path.is_dir()],
+            key=lambda path: path.as_posix(),
+        )
+        queue.extend(children)
 
     return None
 

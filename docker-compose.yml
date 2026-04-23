@@ -58,6 +58,29 @@ services:
     networks:
       - runtime
 
+  deployments-worker:
+    build:
+      context: ./deployments-worker
+    depends_on:
+      - pocketbase
+    environment:
+      POCKETBASE_URL: http://pocketbase:8090
+      POCKETBASE_ADMIN_EMAIL: ${POCKETBASE_ADMIN_EMAIL:-admin@example.com}
+      POCKETBASE_ADMIN_PASSWORD: ${POCKETBASE_ADMIN_PASSWORD:-change-me-please}
+      DEPLOYMENT_RUNNER_IMAGE: autograde-deployment-runner:latest
+      DEPLOYMENT_RUNNER_NETWORK: autograde_runtime
+      DEPLOYMENTS_WORKER_CONCURRENCY: ${DEPLOYMENTS_WORKER_CONCURRENCY:-1}
+      DEPLOYMENTS_WORKER_RUNS_DIR: /deployment-runs
+      DEPLOYMENTS_WORKER_RUNS_VOLUME: autograde_deployments_worker_runs
+      NETLIFY_API_BASE: ${NETLIFY_API_BASE:-https://api.netlify.com/api/v1}
+      NETLIFY_API_TOKEN: ${NETLIFY_API_TOKEN:-}
+      NETLIFY_SITE_ID: ${NETLIFY_SITE_ID:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - deployments_worker_runs:/deployment-runs
+    networks:
+      - runtime
+
   policies-worker:
     build:
       context: ./policies-worker
@@ -97,10 +120,20 @@ services:
     networks:
       - runtime
 
+  deployment-runner:
+    image: autograde-deployment-runner:latest
+    build:
+      context: ./deployment-runner
+    entrypoint: ["sh", "-c", "sleep infinity"]
+    networks:
+      - runtime
+
 volumes:
   pocketbase_data:
   submissions_worker_runs:
     name: autograde_submissions_worker_runs
+  deployments_worker_runs:
+    name: autograde_deployments_worker_runs
   policies_worker_runs:
     name: autograde_policies_worker_runs
 

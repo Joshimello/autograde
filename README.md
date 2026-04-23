@@ -9,7 +9,9 @@ PocketBase is the source of truth for auth, files, realtime state, jobs, logs, p
 - `frontend/`: TanStack Start, React, TypeScript, Tailwind, shadcn components, Bun.
 - `pocketbase/`: PocketBase image, migrations, and auth hooks.
 - `submissions-worker/`: Bun worker that dispatches concurrent `submission-runner` containers.
+- `deployments-worker/`: Bun worker that builds static previews and uploads them to Netlify.
 - `submission-runner/`: Docker sandbox that extracts, builds, and grades one submission with Claude Code.
+- `deployment-runner/`: Docker sandbox that extracts a submission and prepares a static build output for deployment.
 - `policies-worker/`: Bun worker that extracts policies from uploaded documents.
 - `markitdown/`: Microsoft MarkItDown container for PDF, DOCX, and PPTX conversion.
 
@@ -32,12 +34,14 @@ flowchart LR
 
   subgraph workers["Worker Layer"]
     sw["submissions-worker<br/>concurrency pool"]
+    dw["deployments-worker"]
     pw["policies-worker"]
   end
 
   subgraph sandboxes["Docker Sandboxes"]
     sr1["submission-runner"]
     sr2["submission-runner"]
+    dr["deployment-runner"]
     md["markitdown"]
   end
 
@@ -56,6 +60,11 @@ flowchart LR
   sr2 --> llm
   sr1 -- results + logs --> db
   sr2 -- results + logs --> db
+
+  db -- queued deployment jobs --> dw
+  dw --> dr
+  dr -- static output --> dw
+  dw -- preview URLs --> db
 
   db -- queued policy imports --> pw
   pw --> md
@@ -79,11 +88,15 @@ POCKETBASE_ADMIN_EMAIL=admin@example.com
 POCKETBASE_ADMIN_PASSWORD=change-me-please
 GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=
+NETLIFY_API_BASE=https://api.netlify.com/api/v1
+NETLIFY_API_TOKEN=
+NETLIFY_SITE_ID=
 ANTHROPIC_BASE_URL=
 ANTHROPIC_AUTH_TOKEN=
 ANTHROPIC_MODEL=
 ANTHROPIC_DEFAULT_HAIKU_MODEL=
 SUBMISSIONS_WORKER_CONCURRENCY=2
+DEPLOYMENTS_WORKER_CONCURRENCY=1
 VITE_POCKETBASE_URL=http://127.0.0.1:8090
 VITE_ALLOWED_HOSTS=
 ```
@@ -97,6 +110,8 @@ docker compose up --build
 The app runs at `http://localhost:3000`. PocketBase runs at `http://localhost:8090`, with the Dashboard at `http://localhost:8090/_/`. Use the Dashboard as an inspector; schema changes belong in `pocketbase/pb_migrations`.
 
 GitHub OAuth is configured automatically on PocketBase startup when both `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` are set. In the GitHub OAuth app settings, use `http://127.0.0.1:8090/api/oauth2-redirect` for local development, or your deployed PocketBase origin plus `/api/oauth2-redirect`.
+
+Preview deployments are queued automatically when a submission is uploaded. The deployment worker builds the uploaded project locally, then publishes the resulting static output to Netlify as a draft deploy and stores the deploy-specific preview URL on the submission.
 
 If serving the frontend through another hostname, set `VITE_ALLOWED_HOSTS` to a comma-separated list, for example `VITE_ALLOWED_HOSTS=vmlab.taile6aa05.ts.net`.
 
@@ -125,10 +140,12 @@ PB_TYPEGEN_EMAIL=admin@example.com PB_TYPEGEN_PASSWORD=change-me-please bun run 
 
 # Worker checks
 cd submissions-worker && bun run typecheck && bun test
+cd deployments-worker && bun run typecheck && bun test
 cd policies-worker && bun run typecheck && bun test
 
 # Reload only one worker after env/code changes
 docker compose up -d --no-deps --build --force-recreate submissions-worker
+docker compose up -d --no-deps --build --force-recreate deployments-worker
 docker compose up -d --no-deps --build --force-recreate policies-worker
 
 # Rebuild only the frontend container

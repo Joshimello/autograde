@@ -1,5 +1,7 @@
 .DS_Store
 .env
+node_modules/
+__pycache__/
 
 # PocketBase runtime state and uploaded files live in Docker volumes locally.
 pocketbase/pb_data/
@@ -7,3 +9,6 @@ pocketbase/pb_backups/
 
 launch-*.sh
 .playwright-mcp
+
+# Local Netlify folder
+.netlify

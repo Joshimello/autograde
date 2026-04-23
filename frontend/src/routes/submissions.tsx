@@ -7,6 +7,7 @@ import {
   CircleStop,
   ClipboardCheck,
   Download,
+  ExternalLink,
   Pencil,
   RotateCw,
   Search,
@@ -48,6 +49,8 @@ import { Textarea } from '#/components/ui/textarea'
 import {
   type BuildStatus,
   type CriterionGrade,
+  type Deployment,
+  type DeploymentStatus,
   type GradingJob,
   type GradingJobStatus,
   type JobLog,
@@ -98,6 +101,8 @@ function SubmissionsPage() {
     getSubmissionScore,
     getSubmissionJob,
     getSubmissionResult,
+    getSubmissionDeployment,
+    retrySubmissionDeployment,
     saveSubmissionGrades,
   } = useAppData()
   const [search, setSearch] = useState('')
@@ -204,6 +209,7 @@ function SubmissionsPage() {
                   <TableHead>Policy</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>AI grading</TableHead>
+                  <TableHead>Preview</TableHead>
                   <TableHead>Manual score</TableHead>
                   <TableHead>File</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -213,7 +219,7 @@ function SubmissionsPage() {
                 {loading ? (
                   <TableRow>
                     <TableCell
-                      colSpan={7}
+                      colSpan={8}
                       className="h-28 text-center text-muted-foreground"
                     >
                       Loading submissions...
@@ -222,7 +228,7 @@ function SubmissionsPage() {
                 ) : filteredSubmissions.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={7}
+                      colSpan={8}
                       className="h-28 text-center text-muted-foreground"
                     >
                       No submissions match the current filters.
@@ -238,6 +244,7 @@ function SubmissionsPage() {
                     const job = getSubmissionJob(submission.id)
                     const jobLogs = job ? getJobLogs(job.id) : []
                     const result = getSubmissionResult(submission.id)
+                    const deployment = getSubmissionDeployment(submission.id)
                     return (
                       <TableRow key={submission.id}>
                         <TableCell className="font-medium">
@@ -261,6 +268,13 @@ function SubmissionsPage() {
                               }
                             }}
                             onStart={() => startSubmissionGrading(submission.id)}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <PreviewDeploymentCell
+                            deployment={deployment}
+                            submission={submission}
+                            onRetry={() => retrySubmissionDeployment(submission.id)}
                           />
                         </TableCell>
                         <TableCell>
@@ -1191,6 +1205,85 @@ function AIGradingDialog({
   )
 }
 
+function PreviewDeploymentCell({
+  deployment,
+  submission,
+  onRetry,
+}: {
+  deployment: Deployment | null
+  submission: Submission
+  onRetry: () => Promise<void>
+}) {
+  const [retrying, setRetrying] = useState(false)
+  const isRunning =
+    deployment?.status === 'queued' || deployment?.status === 'building'
+
+  async function handleRetry() {
+    setRetrying(true)
+    try {
+      await onRetry()
+    } finally {
+      setRetrying(false)
+    }
+  }
+
+  if (!deployment) {
+    return (
+      <div className="grid gap-2">
+        <Badge variant="secondary">Not queued</Badge>
+        <Button type="button" variant="outline" size="sm" onClick={handleRetry}>
+          {retrying ? 'Queueing...' : 'Queue preview'}
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="grid gap-2">
+      <Badge variant={deploymentStatusVariant(deployment.status)}>
+        {formatStatus(deployment.status)}
+      </Badge>
+      <p
+        className="max-w-56 text-xs text-muted-foreground"
+        title={deployment.error || deployment.message || submission.label}
+      >
+        {deployment.message ||
+          deployment.error ||
+          (deployment.status === 'deployed'
+            ? 'Preview is ready.'
+            : 'Preview has not started yet.')}
+      </p>
+      {deployment.status === 'deployed' && deployment.url ? (
+        <Button asChild type="button" variant="outline" size="sm">
+          <a href={deployment.url} target="_blank" rel="noreferrer">
+            <ExternalLink />
+            Open preview
+          </a>
+        </Button>
+      ) : (
+        <Button
+          type="button"
+          variant={deployment.status === 'failed' ? 'destructive' : 'outline'}
+          size="sm"
+          disabled={isRunning || retrying}
+          onClick={handleRetry}
+        >
+          {deployment.status === 'failed' ? <RotateCw /> : null}
+          {isRunning
+            ? deployment.status === 'building'
+              ? 'Building...'
+              : 'Queued...'
+            : retrying
+              ? 'Queueing...'
+              : deployment.status === 'failed'
+                ? 'Retry preview'
+                : 'Queue preview'}
+        </Button>
+      )}
+    </div>
+  )
+}
+
 function formatStatus(status: string) {
   return status
     .split('_')
@@ -1254,6 +1347,18 @@ function submissionStatusVariant(status: SubmissionStatus) {
   }
 
   if (status === 'graded') {
+    return 'default'
+  }
+
+  return 'secondary'
+}
+
+function deploymentStatusVariant(status: DeploymentStatus) {
+  if (status === 'failed') {
+    return 'destructive'
+  }
+
+  if (status === 'deployed') {
     return 'default'
   }
 
