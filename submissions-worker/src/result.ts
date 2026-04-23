@@ -1,5 +1,3 @@
-export type BuildStatus = 'passed' | 'failed' | 'skipped'
-
 export type RunnerRubricResult = {
   criterionId: string
   label: string
@@ -11,13 +9,9 @@ export type RunnerRubricResult = {
 export type RunnerResult = {
   score: number
   maxScore: number
-  buildStatus: BuildStatus
-  buildLogSummary: string
   feedback: string
   rubricResults: RunnerRubricResult[]
 }
-
-const buildStatuses = new Set<BuildStatus>(['passed', 'failed', 'skipped'])
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -44,12 +38,6 @@ export function parseRunnerResult(value: unknown): RunnerResult {
     throw new Error('Runner result must be an object')
   }
 
-  const buildStatus = assertString(value.buildStatus, 'buildStatus')
-
-  if (!buildStatuses.has(buildStatus as BuildStatus)) {
-    throw new Error('buildStatus is invalid')
-  }
-
   if (!Array.isArray(value.rubricResults)) {
     throw new Error('rubricResults must be an array')
   }
@@ -71,8 +59,6 @@ export function parseRunnerResult(value: unknown): RunnerResult {
   return {
     score: assertNumber(value.score, 'score'),
     maxScore: assertNumber(value.maxScore, 'maxScore'),
-    buildStatus: buildStatus as BuildStatus,
-    buildLogSummary: assertString(value.buildLogSummary, 'buildLogSummary'),
     feedback: assertString(value.feedback, 'feedback'),
     rubricResults,
   }

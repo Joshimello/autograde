@@ -14,9 +14,10 @@ POLICY_PATH = Path(os.getenv("POLICY_PATH", "/input/policy.json"))
 OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", "/output"))
 RESULT_PATH = OUTPUT_DIR / "result.json"
 SOURCE_DIR = Path("/tmp/source")
-BUILD_DIR = Path("/tmp/build")
-BUILD_LOG_PATH = OUTPUT_DIR / "build.log"
-CLAUDE_OUTPUT_PATH = OUTPUT_DIR / "claude-output.txt"
+AGENT_OUTPUT_PATH = OUTPUT_DIR / "agent-output.txt"
+CODEX_SCHEMA_PATH = OUTPUT_DIR / "codex-output-schema.json"
+PROMPT_PATH = OUTPUT_DIR / "prompt.md"
+CODEX_HOME_PATH = OUTPUT_DIR / ".codex-home"
 
 MAX_FILES = int(os.getenv("MAX_EXTRACTED_FILES", "5000"))
 MAX_EXTRACTED_BYTES = int(os.getenv("MAX_EXTRACTED_BYTES", str(500 * 1024 * 1024)))
@@ -33,12 +34,9 @@ def main():
         log("Archive extracted")
         log("Locking source directory read-only")
         make_read_only(SOURCE_DIR)
-        log("Attempting build")
-        build_status, build_summary = attempt_build()
-        log(f"Build status: {build_status}")
-        log("Running Claude Code")
-        result = grade_with_claude(policy, build_status, build_summary)
-        log("Claude Code completed")
+        log("Running Codex")
+        result = grade_with_codex(policy)
+        log("Codex completed")
         log("Writing result.json")
         write_result(result)
         log("Submission runner completed")
@@ -102,149 +100,93 @@ def make_read_only(path):
     os.chmod(path, 0o555)
 
 
-def make_writable(path):
-    for root, dirs, files in os.walk(path):
-        for directory in dirs:
-            os.chmod(Path(root) / directory, 0o755)
-        for file_name in files:
-            os.chmod(Path(root) / file_name, 0o644)
+def grade_with_codex(policy):
+    prompt = build_prompt(policy)
+    PROMPT_PATH.write_text(prompt, encoding="utf-8")
+    CODEX_SCHEMA_PATH.write_text(json.dumps(build_output_schema(), indent=2), encoding="utf-8")
 
-    os.chmod(path, 0o755)
+    env = os.environ.copy()
+    env["OPENAI_API_KEY"] = required_env("OPENAI_API_KEY")
+    env["OPENAI_MODEL"] = os.getenv("OPENAI_MODEL", "GPT-5.3-Codex-Spark")
+    env["CODEX_HOME"] = str(CODEX_HOME_PATH)
 
+    openai_base_url = os.getenv("OPENAI_BASE_URL")
+    config_args = []
 
-def attempt_build():
-    if BUILD_DIR.exists():
-        shutil.rmtree(BUILD_DIR)
+    if openai_base_url:
+        env["OPENAI_BASE_URL"] = openai_base_url
+        config_args.extend(["-c", f"openai_base_url={json.dumps(openai_base_url)}"])
 
-    shutil.copytree(SOURCE_DIR, BUILD_DIR)
-    make_writable(BUILD_DIR)
-    project_root = find_project_root(BUILD_DIR)
+    if CODEX_HOME_PATH.exists():
+        shutil.rmtree(CODEX_HOME_PATH)
 
-    if not project_root:
-        summary = "No package.json was found, so the build step was skipped."
-        BUILD_LOG_PATH.write_text(summary, encoding="utf-8")
-        log(summary)
-        return "skipped", summary
+    CODEX_HOME_PATH.mkdir(parents=True, exist_ok=True)
 
-    package_json = read_json(project_root / "package.json")
-    scripts = package_json.get("scripts") or {}
-
-    if "build" not in scripts:
-        summary = "package.json has no build script, so the build step was skipped."
-        BUILD_LOG_PATH.write_text(summary, encoding="utf-8")
-        log(summary)
-        return "skipped", summary
-
-    commands = build_commands(project_root)
-    log_parts = []
-
-    for command in commands:
-        log(f"$ {command}")
-        completed = subprocess.run(
-            command,
-            cwd=project_root,
-            shell=True,
+    try:
+        login = subprocess.run(
+            ["codex", "login", "--with-api-key", *config_args],
+            cwd=SOURCE_DIR,
+            input=f"{env['OPENAI_API_KEY']}\n",
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            timeout=int(os.getenv("BUILD_TIMEOUT_SECONDS", "180")),
+            timeout=60,
+            env=env,
         )
-        log_parts.append(f"$ {command}\n{completed.stdout}")
+
+        if login.returncode != 0:
+            AGENT_OUTPUT_PATH.write_text(trim(login.stdout, 40000), encoding="utf-8")
+            raise RuntimeError(f"Codex login failed: {trim(login.stdout, 4000)}")
+
+        completed = subprocess.run(
+            [
+                "codex",
+                "exec",
+                "--skip-git-repo-check",
+                "--sandbox",
+                "read-only",
+                "--ephemeral",
+                "--ignore-user-config",
+                "--output-schema",
+                str(CODEX_SCHEMA_PATH),
+                "--output-last-message",
+                str(AGENT_OUTPUT_PATH),
+                "--color",
+                "never",
+                "-m",
+                env["OPENAI_MODEL"],
+                *config_args,
+                prompt,
+            ],
+            cwd=SOURCE_DIR,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=int(os.getenv("CODEX_TIMEOUT_SECONDS", os.getenv("CLAUDE_TIMEOUT_SECONDS", "300"))),
+            env=env,
+        )
+
+        stdout = trim(completed.stdout, 40000)
+        output_text = read_optional(AGENT_OUTPUT_PATH, 40000)
+
+        if not output_text:
+            AGENT_OUTPUT_PATH.write_text(stdout, encoding="utf-8")
+            output_text = stdout
 
         if completed.returncode != 0:
-            build_log = "\n\n".join(log_parts)
-            BUILD_LOG_PATH.write_text(trim(build_log, 20000), encoding="utf-8")
-            print(trim(completed.stdout, 4000), flush=True)
-            log(f"Build command failed with exit code {completed.returncode}")
-            return "failed", trim(build_log, 4000)
+            raise RuntimeError(f"Codex failed: {trim(stdout or output_text, 4000)}")
 
-        print(trim(completed.stdout, 4000), flush=True)
-
-    build_log = "\n\n".join(log_parts)
-    BUILD_LOG_PATH.write_text(trim(build_log, 20000), encoding="utf-8")
-    log("Build passed")
-    return "passed", trim(build_log or "Build passed.", 4000)
+        return parse_agent_json(output_text)
+    finally:
+        if CODEX_HOME_PATH.exists():
+            shutil.rmtree(CODEX_HOME_PATH, ignore_errors=True)
 
 
-def find_project_root(root):
-    queue = [root]
-
-    while queue:
-        candidate = queue.pop(0)
-
-        if (candidate / "package.json").exists():
-            return candidate
-
-        children = sorted(
-            [path for path in candidate.iterdir() if path.is_dir()],
-            key=lambda path: path.as_posix(),
-        )
-        queue.extend(children)
-
-    return None
-
-
-def build_commands(project_root):
-    if (project_root / "bun.lock").exists() or (project_root / "bun.lockb").exists():
-        return ["bun install --frozen-lockfile", "bun run build"]
-
-    if (project_root / "package-lock.json").exists():
-        return ["npm ci", "npm run build"]
-
-    return ["npm install", "npm run build"]
-
-
-def grade_with_claude(policy, build_status, build_summary):
-    prompt_path = OUTPUT_DIR / "prompt.md"
-    prompt_path.write_text(
-        build_prompt(policy, build_status, build_summary),
-        encoding="utf-8",
-    )
-
-    env = os.environ.copy()
-    env["ANTHROPIC_AUTH_TOKEN"] = required_env("ANTHROPIC_AUTH_TOKEN")
-    env["ANTHROPIC_BASE_URL"] = required_env("ANTHROPIC_BASE_URL")
-    env["ANTHROPIC_MODEL"] = required_env("ANTHROPIC_MODEL")
-    default_haiku_model = os.getenv("ANTHROPIC_DEFAULT_HAIKU_MODEL")
-
-    if default_haiku_model:
-        env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = default_haiku_model
-
-    completed = subprocess.run(
-        [
-            "claude",
-            "--permission-mode",
-            "plan",
-            "--disallowedTools",
-            "Edit,Write,MultiEdit",
-            "-p",
-            prompt_path.read_text(encoding="utf-8"),
-        ],
-        cwd=SOURCE_DIR,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        timeout=int(os.getenv("CLAUDE_TIMEOUT_SECONDS", "300")),
-        env=env,
-    )
-    CLAUDE_OUTPUT_PATH.write_text(trim(completed.stdout, 40000), encoding="utf-8")
-
-    if completed.returncode != 0:
-        raise RuntimeError(f"Claude Code failed: {trim(completed.stdout, 4000)}")
-
-    return parse_claude_json(completed.stdout)
-
-
-def build_prompt(policy, build_status, build_summary):
+def build_prompt(policy):
     return textwrap.dedent(
         f"""
         You are grading a code submission. Do not edit files. Do not propose or attempt fixes.
         Inspect the repository read-only and grade it against the policy below.
-
-        The build was already attempted by the runner before this prompt.
-        Build status: {build_status}
-        Build log summary:
-        {build_summary}
 
         Policy JSON:
         {json.dumps(policy, indent=2)}
@@ -253,8 +195,6 @@ def build_prompt(policy, build_status, build_summary):
         {{
           "score": 0,
           "maxScore": 100,
-          "buildStatus": "{build_status}",
-          "buildLogSummary": "Short build summary",
           "feedback": "Overall feedback",
           "rubricResults": [
             {{
@@ -267,13 +207,51 @@ def build_prompt(policy, build_status, build_summary):
           ]
         }}
 
-        Use the policy criteria ids and point values exactly. If the build failed,
-        explain the failure in the feedback and do not claim the app builds.
+        Use the policy criteria ids and point values exactly.
         """
     ).strip()
 
 
-def parse_claude_json(output):
+def build_output_schema():
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            "score",
+            "maxScore",
+            "feedback",
+            "rubricResults",
+        ],
+        "properties": {
+            "score": {"type": "number"},
+            "maxScore": {"type": "number"},
+            "feedback": {"type": "string"},
+            "rubricResults": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": [
+                        "criterionId",
+                        "label",
+                        "score",
+                        "maxScore",
+                        "feedback",
+                    ],
+                    "properties": {
+                        "criterionId": {"type": "string"},
+                        "label": {"type": "string"},
+                        "score": {"type": "number"},
+                        "maxScore": {"type": "number"},
+                        "feedback": {"type": "string"},
+                    },
+                },
+            },
+        },
+    }
+
+
+def parse_agent_json(output):
     stripped = output.strip()
 
     if stripped.startswith("```"):
@@ -284,7 +262,7 @@ def parse_claude_json(output):
     end = stripped.rfind("}")
 
     if start < 0 or end < start:
-        raise RuntimeError("Claude Code did not return JSON")
+        raise RuntimeError("Codex did not return JSON")
 
     return json.loads(stripped[start : end + 1])
 
@@ -307,8 +285,6 @@ def build_failure_result(policy, error):
     return {
         "score": 0,
         "maxScore": sum(item["maxScore"] for item in rubric_results),
-        "buildStatus": "failed",
-        "buildLogSummary": trim(error, 4000),
         "feedback": trim(f"Automatic grading failed: {error}", 8000),
         "rubricResults": rubric_results,
     }
@@ -317,8 +293,7 @@ def build_failure_result(policy, error):
 def write_diagnostic_file(error):
     diagnostic = {
         "error": str(error),
-        "buildLog": read_optional(BUILD_LOG_PATH, 20000),
-        "claudeOutput": read_optional(CLAUDE_OUTPUT_PATH, 40000),
+        "agentOutput": read_optional(AGENT_OUTPUT_PATH, 40000),
     }
     (OUTPUT_DIR / "diagnostics.json").write_text(
         json.dumps(diagnostic, indent=2),

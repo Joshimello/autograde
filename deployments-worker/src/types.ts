@@ -43,3 +43,10 @@ export type DeploymentRunnerResult = {
 }
 
 export type RunnerLogSink = (stream: JobLogStream, message: string) => Promise<void>
+
+export class JobCanceledError extends Error {
+  constructor() {
+    super('Preview deployment was canceled.')
+    this.name = 'JobCanceledError'
+  }
+}

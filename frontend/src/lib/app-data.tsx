@@ -83,16 +83,12 @@ export type JobLog = {
   message: string
 }
 
-export type BuildStatus = 'passed' | 'failed' | 'skipped'
-
 export type SubmissionResult = {
   id: string
   submissionId: string
   created: string
   score: number
   maxScore: number
-  buildStatus: BuildStatus | ''
-  buildLogSummary: string
   feedback: string
   rubricResults: CriterionGrade[]
 }
@@ -187,8 +183,6 @@ type ResultRecord = {
   submission?: string
   score?: number
   maxScore?: number
-  buildStatus?: BuildStatus
-  buildLogSummary?: string
   feedback?: string
   rubricResults?: unknown
 }
@@ -299,6 +293,7 @@ type AppDataContextValue = {
   getSubmissionDeployment: (submissionId: string) => Deployment | null
   getJobLogs: (jobId: string) => JobLog[]
   retrySubmissionDeployment: (submissionId: string) => Promise<void>
+  cancelOrDeleteSubmissionDeployment: (submissionId: string) => Promise<void>
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null)
@@ -420,8 +415,6 @@ function mapResult(record: ResultRecord): SubmissionResult {
     submissionId: record.submission ?? '',
     score: record.score ?? 0,
     maxScore: record.maxScore ?? 0,
-    buildStatus: record.buildStatus ?? '',
-    buildLogSummary: record.buildLogSummary ?? '',
     feedback: record.feedback ?? '',
     rubricResults: toGrades(record.rubricResults),
   }
@@ -959,6 +952,40 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             .catch(() => undefined)
           throw cause
         }
+
+        await refresh()
+      },
+      cancelOrDeleteSubmissionDeployment: async (submissionId) => {
+        const deployment = getLatestSubmissionDeployment(deployments, submissionId)
+
+        if (!deployment) {
+          return
+        }
+
+        const isActive =
+          deployment.status === 'queued' || deployment.status === 'building'
+
+        if (deployment.jobId) {
+          if (isActive) {
+            await (pb as PocketBase).collection(Collections.Jobs).update(
+              deployment.jobId,
+              {
+                status: 'canceled',
+                message: 'Cancel requested',
+                finishedAt: new Date().toISOString(),
+              }
+            )
+          } else {
+            await (pb as PocketBase)
+              .collection(Collections.Jobs)
+              .delete(deployment.jobId)
+              .catch(() => undefined)
+          }
+        }
+
+        await (pb as PocketBase)
+          .collection(Collections.Deployments)
+          .delete(deployment.id)
 
         await refresh()
       },

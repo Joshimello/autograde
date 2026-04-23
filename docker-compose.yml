@@ -48,10 +48,9 @@ services:
       SUBMISSIONS_WORKER_CONCURRENCY: ${SUBMISSIONS_WORKER_CONCURRENCY:-2}
       SUBMISSIONS_WORKER_RUNS_DIR: /runs
       SUBMISSIONS_WORKER_RUNS_VOLUME: autograde_submissions_worker_runs
-      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
-      ANTHROPIC_AUTH_TOKEN: ${ANTHROPIC_AUTH_TOKEN:-}
-      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: ${ANTHROPIC_DEFAULT_HAIKU_MODEL:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-GPT-5.3-Codex-Spark}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - submissions_worker_runs:/runs
@@ -94,10 +93,12 @@ services:
       MARKITDOWN_NETWORK: autograde_runtime
       POLICIES_WORKER_RUNS_DIR: /policy-runs
       POLICIES_WORKER_RUNS_VOLUME: autograde_policies_worker_runs
-      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
-      ANTHROPIC_AUTH_TOKEN: ${ANTHROPIC_AUTH_TOKEN:-}
-      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: ${ANTHROPIC_DEFAULT_HAIKU_MODEL:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-GPT-5.3-Codex-Spark}
+      POLICIES_OPENAI_BASE_URL: ${POLICIES_OPENAI_BASE_URL:-}
+      POLICIES_OPENAI_API_KEY: ${POLICIES_OPENAI_API_KEY:-}
+      POLICIES_OPENAI_MODEL: ${POLICIES_OPENAI_MODEL:-gpt-4.1-mini}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - policies_worker_runs:/policy-runs

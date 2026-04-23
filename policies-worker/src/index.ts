@@ -42,7 +42,7 @@ async function tick() {
     )
 
     await pb.markProgress(policyImport.id, 60, 'Extracting policy')
-    const extractedPolicy = await extractPolicyWithLlm(config, markdown)
+    const extractedPolicy = await extractPolicyWithLlm(config, markdown, runDir)
     const payload = toDraftPolicyPayload(extractedPolicy)
 
     await pb.markProgress(policyImport.id, 90, 'Creating draft policy')

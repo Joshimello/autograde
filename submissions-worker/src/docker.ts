@@ -29,14 +29,11 @@ export class DockerRunner {
       Tty: true,
       Env: [
         `SUBMISSION_LABEL=${input.submission.label}`,
-        `ANTHROPIC_BASE_URL=${this.config.anthropicBaseUrl}`,
-        `ANTHROPIC_AUTH_TOKEN=${this.config.anthropicAuthToken}`,
-        `ANTHROPIC_MODEL=${this.config.anthropicModel}`,
-        ...(this.config.anthropicDefaultHaikuModel
-          ? [
-              `ANTHROPIC_DEFAULT_HAIKU_MODEL=${this.config.anthropicDefaultHaikuModel}`,
-            ]
+        ...(this.config.openaiBaseUrl
+          ? [`OPENAI_BASE_URL=${this.config.openaiBaseUrl}`]
           : []),
+        `OPENAI_API_KEY=${this.config.openaiApiKey}`,
+        `OPENAI_MODEL=${this.config.openaiModel}`,
         `INPUT_ARCHIVE=${input.archivePath}`,
         `POLICY_PATH=${policyPath}`,
         `OUTPUT_DIR=${input.outputDir}`,

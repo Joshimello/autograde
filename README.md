@@ -10,7 +10,7 @@ PocketBase is the source of truth for auth, files, realtime state, jobs, logs, p
 - `pocketbase/`: PocketBase image, migrations, and auth hooks.
 - `submissions-worker/`: Bun worker that dispatches concurrent `submission-runner` containers.
 - `deployments-worker/`: Bun worker that builds static previews and uploads them to Netlify.
-- `submission-runner/`: Docker sandbox that extracts, builds, and grades one submission with Claude Code.
+- `submission-runner/`: Docker sandbox that extracts, builds, and grades one submission with Codex CLI.
 - `deployment-runner/`: Docker sandbox that extracts a submission and prepares a static build output for deployment.
 - `policies-worker/`: Bun worker that extracts policies from uploaded documents.
 - `markitdown/`: Microsoft MarkItDown container for PDF, DOCX, and PPTX conversion.
@@ -45,7 +45,7 @@ flowchart LR
     md["markitdown"]
   end
 
-  llm["LLM proxy<br/>ANTHROPIC_BASE_URL"]
+  gradingLlm["OpenAI-compatible API<br/>OPENAI_BASE_URL"]
 
   user --> ui
   ui <--> auth
@@ -56,8 +56,8 @@ flowchart LR
   db -- queued grading jobs --> sw
   sw --> sr1
   sw --> sr2
-  sr1 --> llm
-  sr2 --> llm
+  sr1 --> gradingLlm
+  sr2 --> gradingLlm
   sr1 -- results + logs --> db
   sr2 -- results + logs --> db
 
@@ -68,14 +68,14 @@ flowchart LR
 
   db -- queued policy imports --> pw
   pw --> md
-  pw --> llm
+  pw --> gradingLlm
   md -- markdown --> pw
   pw -- draft policies --> db
 ```
 
 ## Quick Start
 
-Copy the environment template and fill in your LLM proxy settings:
+Copy the environment template and fill in your grading and policy model settings:
 
 ```bash
 cp .env.example .env
@@ -91,10 +91,12 @@ GITHUB_CLIENT_SECRET=
 NETLIFY_API_BASE=https://api.netlify.com/api/v1
 NETLIFY_API_TOKEN=
 NETLIFY_SITE_ID=
-ANTHROPIC_BASE_URL=
-ANTHROPIC_AUTH_TOKEN=
-ANTHROPIC_MODEL=
-ANTHROPIC_DEFAULT_HAIKU_MODEL=
+OPENAI_BASE_URL=
+OPENAI_API_KEY=
+OPENAI_MODEL=GPT-5.3-Codex-Spark
+POLICIES_OPENAI_BASE_URL=
+POLICIES_OPENAI_API_KEY=
+POLICIES_OPENAI_MODEL=gpt-4.1-mini
 SUBMISSIONS_WORKER_CONCURRENCY=2
 DEPLOYMENTS_WORKER_CONCURRENCY=1
 VITE_POCKETBASE_URL=http://127.0.0.1:8090
@@ -112,6 +114,8 @@ The app runs at `http://localhost:3000`. PocketBase runs at `http://localhost:80
 GitHub OAuth is configured automatically on PocketBase startup when both `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` are set. In the GitHub OAuth app settings, use `http://127.0.0.1:8090/api/oauth2-redirect` for local development, or your deployed PocketBase origin plus `/api/oauth2-redirect`.
 
 Preview deployments are queued automatically when a submission is uploaded. The deployment worker builds the uploaded project locally, then publishes the resulting static output to Netlify as a draft deploy and stores the deploy-specific preview URL on the submission.
+
+Submission grading uses Codex CLI in read-only mode. Policy imports now use the same Codex CLI wrapper instead of calling the model proxy directly. By default the policy worker reuses `OPENAI_BASE_URL` and `OPENAI_API_KEY`, but you can set `POLICIES_OPENAI_BASE_URL`, `POLICIES_OPENAI_API_KEY`, and `POLICIES_OPENAI_MODEL` separately.
 
 If serving the frontend through another hostname, set `VITE_ALLOWED_HOSTS` to a comma-separated list, for example `VITE_ALLOWED_HOSTS=vmlab.taile6aa05.ts.net`.
 

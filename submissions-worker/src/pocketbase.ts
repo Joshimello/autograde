@@ -224,8 +224,6 @@ export function createPocketBaseClient(config: WorkerConfig) {
       score: result.score,
       maxScore: result.maxScore,
       rubricResults: result.rubricResults,
-      buildStatus: result.buildStatus,
-      buildLogSummary: result.buildLogSummary,
       feedback: result.feedback,
     })
   }

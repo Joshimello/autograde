@@ -13,10 +13,9 @@ export type WorkerConfig = {
   runnerMemoryBytes: number
   runnerNanoCpus: number
   runnerPidsLimit: number
-  anthropicBaseUrl: string
-  anthropicAuthToken: string
-  anthropicModel: string
-  anthropicDefaultHaikuModel: string
+  openaiBaseUrl: string
+  openaiApiKey: string
+  openaiModel: string
 }
 
 function optionalEnv(name: string, fallback: string) {
@@ -78,9 +77,8 @@ export function loadConfig(): WorkerConfig {
     runnerMemoryBytes: numberEnv('SUBMISSION_RUNNER_MEMORY_BYTES', 1024 * 1024 * 1024),
     runnerNanoCpus: numberEnv('SUBMISSION_RUNNER_NANO_CPUS', 1_000_000_000),
     runnerPidsLimit: numberEnv('SUBMISSION_RUNNER_PIDS_LIMIT', 256),
-    anthropicBaseUrl: requiredEnv('ANTHROPIC_BASE_URL'),
-    anthropicAuthToken: requiredEnv('ANTHROPIC_AUTH_TOKEN'),
-    anthropicModel: requiredEnv('ANTHROPIC_MODEL'),
-    anthropicDefaultHaikuModel: optionalEnv('ANTHROPIC_DEFAULT_HAIKU_MODEL', ''),
+    openaiBaseUrl: optionalEnv('OPENAI_BASE_URL', ''),
+    openaiApiKey: requiredEnv('OPENAI_API_KEY'),
+    openaiModel: optionalEnv('OPENAI_MODEL', 'GPT-5.3-Codex-Spark'),
   }
 }

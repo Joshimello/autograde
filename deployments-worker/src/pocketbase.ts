@@ -46,7 +46,7 @@ export function createPocketBaseClient(config: WorkerConfig) {
       error: '',
     })) as unknown as JobRecord
 
-    const deployment = await getDeploymentForJob(claimed)
+    const deployment = await getDeploymentForJob(claimed, true)
     await updateDeployment(deployment.id, {
       status: 'building',
       message: 'Preparing preview build',
@@ -67,7 +67,11 @@ export function createPocketBaseClient(config: WorkerConfig) {
     const submission = (await pb
       .collection('submissions')
       .getOne(job.submission)) as unknown as SubmissionRecord
-    const deployment = await getDeploymentForJob(job)
+    const deployment = await getDeploymentForJob(job, false)
+
+    if (!deployment) {
+      throw new Error(`No deployment record found for submission ${job.submission}`)
+    }
     const archivePath = path.join(runDir, 'submission.zip')
     const outputDir = path.join(runDir, 'output')
     const siteDir = path.join(outputDir, 'site')
@@ -153,15 +157,17 @@ export function createPocketBaseClient(config: WorkerConfig) {
     await appendJobLog(job.id, 'system', `Preview deployed: ${url}`)
   }
 
-  async function failJob(job: JobRecord, deploymentId: string, cause: unknown) {
+  async function failJob(job: JobRecord, deploymentId: string | null, cause: unknown) {
     const message = formatError(cause)
     const summary = message.split('\n').find((line) => line.trim()) ?? message
 
-    await updateDeployment(deploymentId, {
-      status: 'failed',
-      message: summary.slice(0, 2000),
-      error: message.slice(0, 5000),
-    })
+    if (deploymentId) {
+      await updateDeployment(deploymentId, {
+        status: 'failed',
+        message: summary.slice(0, 2000),
+        error: message.slice(0, 5000),
+      })
+    }
     await pb.collection('jobs').update(job.id, {
       status: 'failed',
       message: summary.slice(0, 2000),
@@ -171,7 +177,34 @@ export function createPocketBaseClient(config: WorkerConfig) {
     await appendJobLog(job.id, 'system', `Deployment failed: ${summary}`)
   }
 
-  async function getDeploymentForJob(job: Pick<JobRecord, 'id' | 'submission'>) {
+  async function cancelJob(job: JobRecord, deploymentId: string | null) {
+    await pb.collection('jobs').update(job.id, {
+      status: 'canceled',
+      message: 'Preview canceled',
+      error: '',
+      finishedAt: new Date().toISOString(),
+    })
+
+    if (deploymentId) {
+      await updateDeployment(deploymentId, {
+        status: 'failed',
+        message: 'Preview canceled',
+        error: '',
+      }).catch(() => undefined)
+    }
+
+    await appendJobLog(job.id, 'system', 'Preview canceled')
+  }
+
+  async function isJobCanceled(jobId: string) {
+    const job = (await pb.collection('jobs').getOne(jobId)) as unknown as JobRecord
+    return job.status === 'canceled'
+  }
+
+  async function getDeploymentForJob(
+    job: Pick<JobRecord, 'id' | 'submission'>,
+    createIfMissing = true
+  ) {
     const deployments = (await (pb as PocketBase)
       .collection('deployments')
       .getFullList({
@@ -179,6 +212,10 @@ export function createPocketBaseClient(config: WorkerConfig) {
       })) as unknown as DeploymentRecord[]
 
     if (deployments.length === 0) {
+      if (!createIfMissing) {
+        return null
+      }
+
       return (await (pb as PocketBase).collection('deployments').create({
         submission: job.submission,
         status: 'queued',
@@ -227,10 +264,12 @@ export function createPocketBaseClient(config: WorkerConfig) {
   return {
     appendJobLog,
     authenticate,
+    cancelJob,
     claimNextJob,
     failJob,
     finishJob,
     getDeploymentForJob,
+    isJobCanceled,
     loadJobInput,
     markJobProgress,
     prepareRunDir,

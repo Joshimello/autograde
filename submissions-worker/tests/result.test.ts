@@ -7,8 +7,6 @@ describe('parseRunnerResult', () => {
       parseRunnerResult({
         score: 8,
         maxScore: 10,
-        buildStatus: 'passed',
-        buildLogSummary: 'Build passed.',
         feedback: 'Good work.',
         rubricResults: [
           {
@@ -23,8 +21,6 @@ describe('parseRunnerResult', () => {
     ).toEqual({
       score: 8,
       maxScore: 10,
-      buildStatus: 'passed',
-      buildLogSummary: 'Build passed.',
       feedback: 'Good work.',
       rubricResults: [
         {
@@ -38,16 +34,14 @@ describe('parseRunnerResult', () => {
     })
   })
 
-  test('rejects invalid build status', () => {
+  test('rejects invalid feedback type', () => {
     expect(() =>
       parseRunnerResult({
         score: 0,
         maxScore: 10,
-        buildStatus: 'broken',
-        buildLogSummary: '',
-        feedback: '',
+        feedback: 42,
         rubricResults: [],
       })
-    ).toThrow('buildStatus is invalid')
+    ).toThrow('feedback must be a string')
   })
 })

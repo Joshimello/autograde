@@ -5,7 +5,7 @@ import { loadConfig } from './config'
 import { DockerRunner } from './docker'
 import { createNetlifyClient } from './netlify'
 import { createPocketBaseClient } from './pocketbase'
-import type { JobRecord } from './types'
+import { JobCanceledError, type JobRecord } from './types'
 
 const config = loadConfig()
 const pb = createPocketBaseClient(config)
@@ -60,17 +60,25 @@ async function fillRunnerSlots() {
 
 async function processJob(job: JobRecord) {
   const runDir = path.join(config.runsDir, job.id)
+  let deploymentId: string | null = null
 
   try {
     await pb.appendJobLog(job.id, 'system', 'Claimed deployment job')
     await pb.prepareRunDir(runDir)
     await pb.appendJobLog(job.id, 'system', 'Prepared deployment run directory')
     const input = await pb.loadJobInput(job, runDir)
+    deploymentId = input.deployment.id
     await pb.appendJobLog(job.id, 'system', 'Downloaded submission archive')
     await pb.markJobProgress(job.id, input.deployment.id, 20, 'Building preview')
-    const result = await runner.run(input, (stream, message) =>
-      pb.appendJobLog(job.id, stream, message)
+    const result = await runner.run(
+      input,
+      () => pb.isJobCanceled(job.id),
+      (stream, message) => pb.appendJobLog(job.id, stream, message)
     )
+
+    if (await pb.isJobCanceled(job.id)) {
+      throw new JobCanceledError()
+    }
 
     if (!existsSync(path.join(input.siteDir, 'index.html'))) {
       throw new Error('Build completed without a deployable index.html output')
@@ -86,6 +94,10 @@ async function processJob(job: JobRecord) {
       await pb.markJobProgress(job.id, input.deployment.id, 80, message)
     })
 
+    if (await pb.isJobCanceled(job.id)) {
+      throw new JobCanceledError()
+    }
+
     const deployUrl = deploy.url.trim()
 
     if (!deployUrl) {
@@ -99,9 +111,15 @@ async function processJob(job: JobRecord) {
     )
     await pb.finishJob(job, input.deployment.id, deploy.deployId, deployUrl)
   } catch (cause) {
+    if (cause instanceof JobCanceledError) {
+      await pb.cancelJob(job, deploymentId)
+      return
+    }
+
     console.error(`Deployment job ${job.id} failed`, cause)
-    const deploymentId = (await pb.getDeploymentForJob(job)).id
-    await pb.failJob(job, deploymentId, cause)
+    const nextDeploymentId =
+      deploymentId ?? (await pb.getDeploymentForJob(job, false))?.id ?? null
+    await pb.failJob(job, nextDeploymentId, cause)
   } finally {
     await rm(runDir, { recursive: true, force: true }).catch((cause) => {
       console.error(`Failed to clean deployment run directory ${runDir}`, cause)
