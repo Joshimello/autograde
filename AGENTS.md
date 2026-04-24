@@ -2,13 +2,15 @@
 
 ## Project Structure & Module Organization
 
-This repository has two top-level areas:
+This repository is a Docker-based grading workspace with these main services:
 
 - `frontend/`: TanStack Start React app built with Vite, TypeScript, Tailwind CSS, and Bun.
-- `pocketbase/`: PocketBase container definition in `Dockerfile`.
-- `submissions-worker/`: Bun worker that claims grading jobs and launches Docker runner containers.
-- `submission-runner/`: Docker image used to extract, build, and grade one submission.
-- `policies-worker/`: Bun worker that imports policy documents and creates draft policies.
+- `pocketbase/`: PocketBase image, migrations, and auth hooks.
+- `submissions-worker/`: Bun worker that claims grading jobs and launches submission runner containers.
+- `submission-runner/`: Docker image used to extract, inspect, and grade one submission with Codex CLI.
+- `deployments-worker/`: Bun worker that claims preview deployment jobs and uploads built output to Netlify.
+- `deployment-runner/`: Docker image used to extract and prepare one submission for static preview deployment.
+- `policies-worker/`: Bun worker that imports policy documents and creates draft policies using Codex CLI.
 - `markitdown/`: Docker image for Microsoft MarkItDown document-to-Markdown conversion.
 
 Frontend source lives in `frontend/src`. File-based routes are in `src/routes`, shared UI components are in `src/components`, helpers are in `src/lib`, and global styles/tokens are in `src/styles.css`. Generated router output is `src/routeTree.gen.ts`; avoid hand-editing it.
@@ -51,6 +53,13 @@ bun run typecheck
 bun test
 ```
 
+Run deployment worker checks from `deployments-worker/`:
+
+```bash
+bun install
+bun test
+```
+
 Run policy worker checks from `policies-worker/`:
 
 ```bash
@@ -77,4 +86,4 @@ Pull requests should include a short summary, linked issue when applicable, test
 
 ## Security & Configuration Tips
 
-Do not commit secrets, local databases, or PocketBase runtime data. If adding PocketBase migrations or hooks, keep them under explicit versioned directories and update the Dockerfile intentionally.
+Do not commit secrets, local databases, PocketBase runtime data, or uploaded files. If adding PocketBase migrations or hooks, keep them under explicit versioned directories and update the Dockerfile intentionally. Preview hosting depends on Netlify configuration, and grading/policy imports depend on `OPENAI_*` or `POLICIES_OPENAI_*` settings, so treat env changes as part of the feature surface.

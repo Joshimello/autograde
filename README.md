@@ -1,6 +1,6 @@
 # Autograde
 
-Autograde is a local-first AI grading workspace for code submissions. Users manage grading policies, upload zipped submissions, run sandboxed AI grading, review the AI recommendations, and confirm final manual grades.
+Autograde is a Docker-based AI grading workspace for code submissions. Users manage grading policies, upload zipped submissions, run sandboxed AI grading, generate hosted preview deployments, review the AI recommendations, and confirm final manual grades.
 
 PocketBase is the source of truth for auth, files, realtime state, jobs, logs, policies, submissions, and grading results. Workers watch PocketBase records and do the heavy work in Docker.
 
@@ -10,7 +10,7 @@ PocketBase is the source of truth for auth, files, realtime state, jobs, logs, p
 - `pocketbase/`: PocketBase image, migrations, and auth hooks.
 - `submissions-worker/`: Bun worker that dispatches concurrent `submission-runner` containers.
 - `deployments-worker/`: Bun worker that builds static previews and uploads them to Netlify.
-- `submission-runner/`: Docker sandbox that extracts, builds, and grades one submission with Codex CLI.
+- `submission-runner/`: Docker sandbox that extracts, analyzes, and grades one submission with Codex CLI.
 - `deployment-runner/`: Docker sandbox that extracts a submission and prepares a static build output for deployment.
 - `policies-worker/`: Bun worker that extracts policies from uploaded documents.
 - `markitdown/`: Microsoft MarkItDown container for PDF, DOCX, and PPTX conversion.
@@ -22,30 +22,30 @@ flowchart LR
   user((Instructor))
 
   subgraph app["Browser App"]
-    ui["TanStack Start UI<br/>submissions + policies + review"]
+    ui["TanStack Start UI<br/>submissions, previews, policies, review"]
   end
 
   subgraph pb["PocketBase<br/>system of record"]
     auth["OAuth + whitelist"]
-    db[("Collections<br/>policies, submissions, jobs,<br/>results, job_logs")]
+    db[("Collections<br/>policies, submissions, jobs,<br/>results, deployments, job_logs")]
     files[("File storage<br/>zips + policy docs")]
     rt["Realtime updates"]
   end
 
   subgraph workers["Worker Layer"]
-    sw["submissions-worker<br/>concurrency pool"]
+    sw["submissions-worker"]
     dw["deployments-worker"]
     pw["policies-worker"]
   end
 
   subgraph sandboxes["Docker Sandboxes"]
-    sr1["submission-runner"]
-    sr2["submission-runner"]
+    sr["submission-runner"]
     dr["deployment-runner"]
     md["markitdown"]
   end
 
-  gradingLlm["OpenAI-compatible API<br/>OPENAI_BASE_URL"]
+  llm["OpenAI-compatible API<br/>OPENAI_BASE_URL"]
+  netlify["Netlify<br/>draft deploy previews"]
 
   user --> ui
   ui <--> auth
@@ -54,21 +54,20 @@ flowchart LR
   rt -.live status + logs.-> ui
 
   db -- queued grading jobs --> sw
-  sw --> sr1
-  sw --> sr2
-  sr1 --> gradingLlm
-  sr2 --> gradingLlm
-  sr1 -- results + logs --> db
-  sr2 -- results + logs --> db
+  sw --> sr
+  sr --> llm
+  sr -- grading results + logs --> db
 
   db -- queued deployment jobs --> dw
   dw --> dr
-  dr -- static output --> dw
-  dw -- preview URLs --> db
+  dr -- built static site --> dw
+  dw --> netlify
+  netlify -- deploy URL --> dw
+  dw -- deployment status + preview URL --> db
 
   db -- queued policy imports --> pw
   pw --> md
-  pw --> gradingLlm
+  pw --> llm
   md -- markdown --> pw
   pw -- draft policies --> db
 ```
@@ -131,34 +130,10 @@ To run the whole stack with the frontend in dev mode:
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
 
-## Common Commands
-
-```bash
-# Frontend
-cd frontend
-bun --bun run build
-bun --bun run test
-
-# Regenerate PocketBase types
-PB_TYPEGEN_EMAIL=admin@example.com PB_TYPEGEN_PASSWORD=change-me-please bun run typegen
-
-# Worker checks
-cd submissions-worker && bun run typecheck && bun test
-cd deployments-worker && bun run typecheck && bun test
-cd policies-worker && bun run typecheck && bun test
-
-# Reload only one worker after env/code changes
-docker compose up -d --no-deps --build --force-recreate submissions-worker
-docker compose up -d --no-deps --build --force-recreate deployments-worker
-docker compose up -d --no-deps --build --force-recreate policies-worker
-
-# Rebuild only the frontend container
-docker compose up -d --no-deps --build --force-recreate frontend
-```
-
 ## Notes
 
 - Uploaded submissions must be zip files.
 - AI grading produces recommendations first; final grading is confirmed manually in the UI.
-- `SUBMISSIONS_WORKER_CONCURRENCY` controls how many submission runner containers one worker can run at once.
+- Preview deployments are handled separately from AI grading and publish unique Netlify draft URLs per submission.
+- `SUBMISSIONS_WORKER_CONCURRENCY` and `DEPLOYMENTS_WORKER_CONCURRENCY` control how many grading or preview jobs each worker can run at once.
 - Do not commit `.env`, PocketBase runtime data, uploaded files, or generated local databases.
